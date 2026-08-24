@@ -1249,7 +1249,7 @@ async function promotion(context) {
 }
 
 function applyWinner(context) {
-  if (!context.config.apply || context.state.status !== "promoted") return null;
+  if (context.state.status !== "promoted") return null;
   const existingPatch = join(context.experiment, "winner.patch");
   if (context.state.applied) {
     if (!existsSync(existingPatch)) throw new ClimbError("E_EVIDENCE", "applied winner is missing winner.patch", 3);
@@ -1264,6 +1264,11 @@ function applyWinner(context) {
   const patchPath = join(context.experiment, "winner.patch");
   atomicWrite(patchPath, patch);
   if (!patch.trim()) throw new ClimbError("E_APPLY", "promoted candidate has an empty patch");
+  append(context, "winner_patch_prepared", {
+    patch: relative(context.experiment, patchPath),
+    patch_sha256: fileSha256(patchPath),
+  });
+  if (!context.config.apply) return patchPath;
   runSync(["git", "apply", "--check", patchPath], { cwd: source.workspace });
   runSync(["git", "apply", patchPath], { cwd: source.workspace });
   context.state.applied = true;
@@ -1319,12 +1324,7 @@ function renderReport(context, receipt) {
   const kept = context.ledger.records.filter((record) => record.type === "candidate_kept").at(-1)?.payload ?? null;
   const selectedId = kept?.candidate_id ?? null;
   const selected = allCandidates.find((candidate) => candidate.id === selectedId) ?? null;
-  const visible = allCandidates.slice(0, 10);
-  if (selected && !visible.some((candidate) => candidate.id === selected.id)) visible[visible.length - 1] = selected;
-  const rows = Math.max(1, Math.ceil(visible.length / 5));
-  const candidatesHeight = rows * 142 + (rows - 1) * 14;
-  const verdictY = 352 + candidatesHeight + 34;
-  const height = verdictY + 224;
+  const height = 820;
   const promoted = receipt.status === "promoted";
   const accent = promoted ? "#32d583" : "#f5b942";
   const statusLabel = promoted ? "PROMOTED" : "RETAINED";
@@ -1334,26 +1334,71 @@ function renderReport(context, receipt) {
   const holdoutBaseline = receipt.promotion?.baseline?.score;
   const holdoutCandidate = receipt.promotion?.candidate?.score;
   const developmentWinner = selected?.score ?? (selectedId ? kept?.score : receipt.baseline.score);
-  const hiddenCount = Math.max(0, allCandidates.length - visible.length);
-  const candidateCards = visible.map((candidate, offset) => {
-    const col = offset % 5;
-    const row = Math.floor(offset / 5);
-    const x = 40 + col * 224;
-    const y = 352 + row * 156;
-    const isSelected = candidate.id === selectedId;
-    const color = isSelected ? "#32d583" : candidate.status === "rejected" ? "#59657a" :
-      candidate.status === "invalid" || candidate.status === "crashed" ? "#f97066" : "#8b98ad";
-    const label = isSelected ? "DEV WINNER" : candidate.status.toUpperCase();
-    return `
-      <g>
-        <rect x="${x}" y="${y}" width="208" height="142" rx="14" fill="#111a2c" stroke="${color}" stroke-width="${isSelected ? 2 : 1}"/>
-        <circle cx="${x + 20}" cy="${y + 23}" r="5" fill="${color}"/>
-        <text x="${x + 34}" y="${y + 28}" class="candidate">${xml(candidate.id)}</text>
-        <text x="${x + 16}" y="${y + 58}" class="muted">${xml(shortLine(candidate.strategy ?? "candidate route", 24))}</text>
-        <text x="${x + 16}" y="${y + 101}" class="score-small">${xml(scoreText(candidate.score))}</text>
-        <text x="${x + 16}" y="${y + 124}" class="label" fill="${color}">${xml(label)}</text>
-      </g>`;
+
+  const chart = { left: 100, right: 1132, top: 228, bottom: 492 };
+  const scores = [receipt.baseline.score, ...allCandidates.map((candidate) => candidate.score)]
+    .map(Number).filter(Number.isFinite);
+  let scoreMin = Math.min(...scores);
+  let scoreMax = Math.max(...scores);
+  if (scoreMin === scoreMax) {
+    const padding = Math.max(1, Math.abs(scoreMin) * 0.1);
+    scoreMin -= padding;
+    scoreMax += padding;
+  } else {
+    const padding = (scoreMax - scoreMin) * 0.12;
+    scoreMin -= padding;
+    scoreMax += padding;
+  }
+  const xFor = (index) => chart.left + ((chart.right - chart.left) * index / Math.max(1, allCandidates.length));
+  const yFor = (score) => chart.bottom - ((Number(score) - scoreMin) / (scoreMax - scoreMin)) * (chart.bottom - chart.top);
+
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const y = chart.bottom - ratio * (chart.bottom - chart.top);
+    const value = scoreMin + ratio * (scoreMax - scoreMin);
+    return `<line x1="${chart.left}" y1="${y}" x2="${chart.right}" y2="${y}" class="grid"/>
+    <text x="${chart.left - 14}" y="${y + 4}" class="axis" text-anchor="end">${xml(scoreText(value))}</text>`;
+  }).join("\n");
+
+  const roundAfter = new Map(context.ledger.records
+    .filter((record) => record.type === "round_selected")
+    .map((record) => [Number(record.payload.round), Number(record.payload.incumbent_score_after)]));
+  let incumbentScore = Number(receipt.baseline.score);
+  let incumbentPath = `M ${xFor(0)} ${yFor(incumbentScore)}`;
+  for (let index = 0; index < allCandidates.length; index += 1) {
+    const candidate = allCandidates[index];
+    const x = xFor(index + 1);
+    incumbentPath += ` H ${x}`;
+    const next = allCandidates[index + 1];
+    const endsRound = !next || Number(next.round) !== Number(candidate.round);
+    if (endsRound && roundAfter.has(Number(candidate.round))) {
+      incumbentScore = roundAfter.get(Number(candidate.round));
+      incumbentPath += ` V ${yFor(incumbentScore)}`;
+    }
+  }
+
+  const attemptTicks = allCandidates.map((candidate, index) => {
+    const stride = Math.max(1, Math.ceil(allCandidates.length / 10));
+    if ((index + 1) % stride !== 0 && index !== 0 && index !== allCandidates.length - 1) return "";
+    return `<text x="${xFor(index + 1)}" y="${chart.bottom + 25}" class="axis" text-anchor="middle">${index + 1}</text>`;
   }).join("");
+
+  const candidateMarks = allCandidates.map((candidate, index) => {
+    const x = xFor(index + 1);
+    if (!Number.isFinite(Number(candidate.score))) {
+      return `<path d="M ${x - 5} ${chart.bottom - 5}l10 10m0-10l-10 10" stroke="#f97066" stroke-width="2"/>`;
+    }
+    const y = yFor(candidate.score);
+    const isSelected = candidate.id === selectedId;
+    const isKept = candidate.status === "kept";
+    const color = isKept ? "#32d583" : candidate.gates === false ? "#f5b942" : "#66758d";
+    const calloutY = Math.max(chart.top + 18, y - 22);
+    const keptLabel = isSelected ? "DEV WINNER" : "KEPT";
+    return `<circle cx="${x}" cy="${y}" r="${isKept ? 7 : 5}" fill="${color}" stroke="#081120" stroke-width="2"/>
+      ${isKept ? `<path d="M ${x} ${y - 9}V ${calloutY + 5}" stroke="#32d583" stroke-width="1"/>
+      <text x="${x}" y="${calloutY}" class="selected" text-anchor="middle">${keptLabel} · ${xml(candidate.id)} · ${xml(scoreText(candidate.score))}</text>` : ""}`;
+  }).join("\n");
+
   const task = xml(shortLine(receipt.task, 128));
   const verdictDetail = receipt.promotion?.holdout_used
     ? `baseline ${scoreText(holdoutBaseline)} → candidate ${scoreText(holdoutCandidate)}`
@@ -1369,11 +1414,12 @@ function renderReport(context, receipt) {
     .task { fill: #aab4c5; font-size: 15px; }
     .label { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; }
     .muted { fill: #8b98ad; font-size: 12px; }
-    .candidate { fill: #e8edf5; font-size: 14px; font-weight: 700; }
     .score { fill: #f7f9fc; font-size: 32px; font-weight: 760; }
-    .score-small { fill: #f7f9fc; font-size: 26px; font-weight: 760; }
     .body { fill: #c6cfdd; font-size: 15px; }
     .metric { fill: #f7f9fc; font-size: 17px; font-weight: 700; }
+    .axis { fill: #718096; font-size: 11px; }
+    .grid { stroke: #26344c; stroke-width: 1; stroke-dasharray: 3 5; }
+    .selected { fill: #32d583; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
   </style>
   <rect width="1200" height="${height}" rx="24" fill="#081120"/>
   <path d="M0 0h1200v6H0z" fill="${accent}"/>
@@ -1383,41 +1429,37 @@ function renderReport(context, receipt) {
   <text x="1088" y="61" class="label" fill="${accent}" text-anchor="middle">${xml(statusLabel)}</text>
   <text x="40" y="124" class="task">${task}</text>
 
-  <rect x="40" y="154" width="1120" height="132" rx="18" fill="#0d1728" stroke="#26344c"/>
-  <text x="64" y="184" class="label" fill="#8b98ad">DEVELOPMENT SCORE</text>
-  <text x="64" y="236" class="score">${xml(scoreText(receipt.baseline.score))}</text>
-  <text x="159" y="232" fill="#59657a" font-size="28">→</text>
-  <text x="210" y="236" class="score" fill="${selected ? "#32d583" : "#f7f9fc"}">${xml(scoreText(developmentWinner))}</text>
-  <text x="64" y="263" class="muted">baseline</text>
-  <text x="210" y="263" class="muted">${xml(selectedId ?? "baseline retained")}</text>
-  <path d="M420 180v80" stroke="#26344c"/>
-  <text x="456" y="201" class="label" fill="#8b98ad">PRIVATE HOLDOUT</text>
-  <text x="456" y="238" class="metric" fill="${accent}">${xml(holdout)}</text>
-  <text x="456" y="263" class="muted">${xml(verdictDetail)}</text>
-  <path d="M810 180v80" stroke="#26344c"/>
-  <text x="846" y="201" class="label" fill="#8b98ad">SOURCE CHECKOUT</text>
-  <text x="846" y="238" class="metric">${xml(applied)}</text>
-  <text x="846" y="263" class="muted">${xml(shortLine(receipt.terminal_reason, 34))}</text>
+  <rect x="40" y="154" width="1120" height="402" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="64" y="188" class="label" fill="#8b98ad">DEVELOPMENT SCORE TRAJECTORY</text>
+  <line x1="810" y1="184" x2="842" y2="184" stroke="#32d583" stroke-width="3"/>
+  <text x="850" y="188" class="axis">round incumbent</text>
+  <circle cx="966" cy="184" r="5" fill="#66758d"/>
+  <text x="978" y="188" class="axis">rejected</text>
+  <circle cx="1054" cy="184" r="6" fill="#32d583"/>
+  <text x="1066" y="188" class="axis">kept</text>
+  ${grid}
+  <path d="${incumbentPath}" fill="none" stroke="#32d583" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="${xFor(0)}" cy="${yFor(receipt.baseline.score)}" r="6" fill="#58a6ff" stroke="#081120" stroke-width="2"/>
+  ${candidateMarks}
+  ${attemptTicks}
+  <text x="${chart.left}" y="${chart.bottom + 25}" class="axis" text-anchor="middle">0</text>
+  <text x="${(chart.left + chart.right) / 2}" y="${chart.bottom + 47}" class="axis" text-anchor="middle">candidate attempt</text>
 
-  <text x="40" y="326" class="label" fill="#8b98ad">CANDIDATE ROUTES · ${allCandidates.length} ATTEMPTED${hiddenCount ? ` · ${hiddenCount} MORE IN RECEIPT` : ""}</text>
-  ${candidateCards}
+  <rect x="40" y="580" width="710" height="166" rx="18" fill="#0d1728" stroke="${accent}" stroke-opacity=".8"/>
+  <circle cx="72" cy="618" r="10" fill="${accent}"/>
+  <text x="96" y="625" class="metric">${promoted ? "Holdout verified the winner" : "The baseline was safely retained"}</text>
+  <text x="64" y="657" class="body">${promoted ? "The promoted patch cleared development selection and the private holdout." : "No candidate was applied because the final promotion boundary did not pass."}</text>
+  <text x="64" y="690" class="label" fill="#8b98ad">PRIVATE HOLDOUT</text>
+  <text x="214" y="690" class="metric" fill="${accent}">${xml(holdout)}</text>
+  <text x="64" y="718" class="muted">${xml(verdictDetail)}</text>
 
-  <rect x="40" y="${verdictY}" width="1120" height="154" rx="18" fill="#0d1728" stroke="${accent}" stroke-opacity=".8"/>
-  <circle cx="72" cy="${verdictY + 38}" r="10" fill="${accent}"/>
-  <text x="96" y="${verdictY + 45}" class="metric">${promoted ? "Holdout verified the winner" : "The baseline was safely retained"}</text>
-  <text x="64" y="${verdictY + 77}" class="body">${promoted ? "The promoted patch cleared development selection and the private holdout." : "No candidate was applied because the final promotion boundary did not pass."}</text>
-  <text x="64" y="${verdictY + 120}" class="label" fill="#8b98ad">CANDIDATES</text>
-  <text x="166" y="${verdictY + 120}" class="metric">${receipt.counts.candidates}</text>
-  <text x="260" y="${verdictY + 120}" class="label" fill="#8b98ad">KEPT</text>
-  <text x="318" y="${verdictY + 120}" class="metric">${receipt.counts.kept}</text>
-  <text x="390" y="${verdictY + 120}" class="label" fill="#8b98ad">REJECTED</text>
-  <text x="480" y="${verdictY + 120}" class="metric">${receipt.counts.rejected}</text>
-  <text x="570" y="${verdictY + 120}" class="label" fill="#8b98ad">TOKENS</text>
-  <text x="642" y="${verdictY + 120}" class="metric">${usageTotal(receipt.usage)}</text>
-  <text x="750" y="${verdictY + 120}" class="label" fill="#8b98ad">WALL</text>
-  <text x="802" y="${verdictY + 120}" class="metric">${receipt.wall_seconds}s</text>
-  <text x="930" y="${verdictY + 120}" class="label" fill="#8b98ad">ROUNDS</text>
-  <text x="1005" y="${verdictY + 120}" class="metric">${receipt.rounds_completed}</text>
+  <rect x="774" y="580" width="386" height="166" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="798" y="614" class="label" fill="#8b98ad">BASELINE → DEV WINNER</text>
+  <text x="798" y="647" class="metric">${xml(scoreText(receipt.baseline.score))} → ${xml(scoreText(developmentWinner))}</text>
+  <text x="798" y="678" class="label" fill="#8b98ad">SOURCE</text>
+  <text x="868" y="678" class="metric">${xml(applied)}</text>
+  <text x="798" y="709" class="muted">${receipt.counts.candidates} candidates · ${receipt.counts.kept} kept · ${receipt.counts.rejected} rejected</text>
+  <text x="798" y="731" class="muted">${usageTotal(receipt.usage)} tokens · ${receipt.wall_seconds}s · ${receipt.rounds_completed} rounds</text>
   <text x="40" y="${height - 24}" class="muted">experiment ${xml(receipt.experiment_id)} · ${xml(receipt.completed_at)} · machine receipt: receipt.json</text>
 </svg>\n`;
 }

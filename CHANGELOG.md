@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 — 2026-08-24
+
+- Replaced the abstract route mark with a human rock-climber logo that remains
+  readable at repository-icon size.
+- Rebuilt every generated run report around an empirical score trajectory:
+  candidate results, round incumbents, selected patch, holdout verdict, usage,
+  and application state.
+- Added a disclosed real-Codex smoke benchmark with its frozen task, evaluator,
+  manifest, hash-chained ledger, winner patch, receipt, and rendered report.
+- Fixed `--no-apply` so promoted runs always save `winner.patch` while leaving
+  the source checkout untouched.
+- Documented the round-boundary token-budget overshoot and benchmark evidence
+  limits instead of presenting them as stronger guarantees.
+
 ## 0.2.0 — 2026-08-24
 
 - Renamed the project, repository, package, CLI, skill, schemas, and local state

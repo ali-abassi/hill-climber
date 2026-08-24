@@ -91,6 +91,8 @@ Require all of the following:
 6. The receipt records candidate counts, usage, stop reason, evidence paths,
    and the generated `report.svg`; the controller response records the next
    action.
+7. With `--no-apply`, a promoted run still contains `winner.patch` while the
+   source checkout remains clean.
 
 If the receipt says `retained`, `blocked`, `invalid`, `crashed`, or reports a
 failed gate, explain the evidence and retain the source baseline. Do not turn a
@@ -106,6 +108,9 @@ failed experiment into a success narrative.
 - Keep scoring code fixed for the entire experiment.
 - A score is only as meaningful as its evaluator. Call out weak proxies and
   refuse promotion when the evaluator does not measure the stated goal.
+- Treat `--max-tokens` and `--max-wall-seconds` as round-boundary stop
+  thresholds: candidates already in flight can overshoot them. Use candidate
+  count, round count, and per-candidate/evaluator timeouts as hard outer bounds.
 
 For full flags and artifact details, read `README.md`. For security boundaries,
 read `SECURITY.md`.

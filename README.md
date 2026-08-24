@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="assets/logo.svg" width="112" alt="Hill Climber: five routes converging into one summit path">
+  <img src="assets/logo.svg" width="124" alt="Hill Climber: a human rock climber reaching upward on a steep rock face">
 
-  <h1>Let five Codex agents compete. Ship only the verified winner.</h1>
+  <h1>Turn code changes into measured experiments.</h1>
 
-  <p><strong>Hill Climber runs five isolated attempts from the same Git commit, grades every route, verifies one winner on a private holdout, and applies only the promoted patch.</strong></p>
+  <p><strong>Hill Climber gives Codex a measurable repository goal, runs competing patches in isolated Git worktrees, plots every score, verifies the best strict gain on unseen cases, and applies only a promoted patch.</strong></p>
 
   <p>
     <a href="https://github.com/ali-abassi/hill-climber/actions/workflows/test.yml"><img src="https://github.com/ali-abassi/hill-climber/actions/workflows/test.yml/badge.svg?branch=trunk" alt="Tests"></a>
@@ -12,33 +12,37 @@
 
   <p>
     <a href="#quickstart">Quickstart</a> ·
-    <a href="#visual-result">Visual result</a> ·
     <a href="#how-the-climb-works">How it works</a> ·
+    <a href="#benchmark-receipt">Benchmark</a> ·
     <a href="#commands">Commands</a> ·
     <a href="#when-to-use-it">When to use it</a> ·
     <a href="#security-boundary">Security</a> ·
     <a href="SKILL.md">Agent skill</a>
   </p>
 
-  <img src="assets/hero.svg" width="100%" alt="Five isolated Codex candidates leave one immutable baseline, a detached evaluator keeps one, a private holdout verifies it, and only then is the patch promoted">
+  <img src="benchmarks/duration/results/report.svg" width="100%" alt="A real Hill Climber benchmark report plotting five candidate scores, the round incumbent, selected development winner, private holdout promotion, token usage, and saved patch state">
+
+  <p><sub>Real Codex run: 14/19 → 19/19 development cases; 4/12 → 12/12 unseen holdout cases. One disclosed smoke benchmark—not a general performance claim.</sub></p>
 </div>
 
 ## Why does this exist?
 
-Autonomous coding loops often blur the roles that should stay separate:
+“Make this code better” is not an evaluation method. Autonomous coding loops
+often blur roles that should stay separate:
 
 - the same agent proposes a change and declares it better;
 - sequential attempts overwrite each other, making comparison unreliable;
 - visible tests become the target, while hidden regressions go unnoticed;
 - interruption means starting over—or guessing what already ran.
 
-Hill Climber makes the model the **candidate generator**, not the judge. A local
-controller owns the baseline, isolated worktrees, scoring, selection, budgets,
-private holdout, recovery, and final application.
+Hill Climber makes the model the **candidate generator**, not the judge. You
+define the metric and unseen cases. A local controller measures the untouched
+baseline, isolates each patch, keeps only strict gains, verifies the selected
+patch once more, and preserves the complete experiment trace.
 
 ## Quickstart
 
-### Prove the engine locally—no API key or subscription usage
+### Prove the controller locally—no API key or subscription usage
 
 ```bash
 git clone https://github.com/ali-abassi/hill-climber.git
@@ -47,7 +51,9 @@ npm ci
 ./examples/demo.sh
 ```
 
-Real output from the deterministic demo:
+The demo substitutes a deterministic fake candidate generator so you can test
+the controller, report, and apply boundary without spending subscription
+capacity. Real output:
 
 ```text
 Hill Climber demo
@@ -60,18 +66,6 @@ applied: yes
 report: generated
 ```
 
-## Visual result
-
-Every completed experiment automatically writes a self-contained
-`report.svg` beside `receipt.json`. Open it in a browser, attach it to a pull
-request, or render it in any tool that understands SVG. It is generated from
-the same evidence ledger as the machine receipt and covers successful,
-retained, and holdout-reverted runs.
-
-Real `report.svg` from the deterministic quickstart above:
-
-<img src="assets/example-report.svg" width="100%" alt="Hill Climber run report showing five candidate scores, the selected development winner, promoted private holdout, applied patch, token usage, wall time, and round count">
-
 ### Install the real CLI
 
 ```bash
@@ -81,7 +75,7 @@ hill-climber --version
 ```
 
 ```text
-hill-climber 0.2.0
+hill-climber 0.3.0
 ```
 
 The installer uses the ChatGPT subscription already authenticated by the Codex
@@ -99,13 +93,15 @@ hill-climber run \
   --holdout-eval "python3 /absolute/private/holdout_evaluator.py" \
   --mutable "src/**/*.py" \
   --candidates 5 \
-  --rounds 1 \
+  --rounds 3 \
+  --plateau-rounds 2 \
   --out /tmp/duration-climb \
   --no-apply
 ```
 
-Start with `--no-apply`. The promoted patch and full evidence stay in the
-experiment directory, while your source checkout remains unchanged.
+Start with `--no-apply`. A promoted `winner.patch`, score-trajectory
+`report.svg`, and machine `receipt.json` stay in the experiment directory while
+your source checkout remains unchanged.
 
 Each evaluator runs from a detached candidate checkout and prints exactly one
 JSON object:
@@ -144,6 +140,42 @@ working contract.
 Interrupted rounds reuse committed artifacts. If interruption happens after
 the holdout begins, that holdout is closed and never replayed.
 
+Every completed experiment writes a self-contained `report.svg` from the same
+hash-chained evidence as `receipt.json`. The graph plots every evaluated
+candidate, marks the development winner, and draws the round-by-round incumbent
+as a step line. Retained and holdout-reverted runs get the same report without
+being presented as successes.
+
+## Benchmark receipt
+
+The repository includes one small, disclosed smoke benchmark: repair an
+incomplete compound-duration parser without editing its evaluator. It was run
+with the real Codex SDK—not the deterministic demo generator—using
+`gpt-5.6-terra`, medium reasoning, five candidates, one round, and `--no-apply`.
+
+| Measurement | Untouched baseline | Selected patch |
+|---|---:|---:|
+| Development cases | 14/19 (`0.736842`) | 19/19 (`1.0`) |
+| Unseen holdout cases | 4/12 (`0.333333`) | 12/12 (`1.0`) |
+| Import gate | pass | pass |
+
+The selected patch changed one file and 21 lines. The run took `134.718s`,
+used `555,989` input tokens and `8,774` output tokens, saved the patch without
+touching the source checkout, and stopped when the declared target was reached.
+
+[Graphical report](benchmarks/duration/results/report.svg) ·
+[machine receipt](benchmarks/duration/results/receipt.json) ·
+[hash-chained ledger](benchmarks/duration/results/events.jsonl) ·
+[frozen manifest](benchmarks/duration/results/manifest.json) ·
+[winner patch](benchmarks/duration/results/winner.patch) ·
+[task and evaluator](benchmarks/duration)
+
+This is evidence that the shipped loop improved one bounded code task under one
+frozen evaluation—not evidence that it beats other tools or improves arbitrary
+repositories. An earlier attempt was discarded after the holdout fixture was
+found to contain an arithmetic error; the evaluator was corrected, rehashed,
+and the complete experiment was rerun from the untouched baseline.
+
 ## Commands
 
 | You want to… | Run |
@@ -151,6 +183,7 @@ the holdout begins, that holdout is closed and never replayed.
 | Start a bounded search | `hill-climber run …` |
 | Verify current state | `hill-climber status EXPERIMENT --json` |
 | Read the receipt | `hill-climber inspect EXPERIMENT --json` |
+| View the score trajectory | Open `EXPERIMENT/report.svg` in a browser |
 | Inspect one route | `hill-climber inspect EXPERIMENT --candidate r01-c03 --json` |
 | Stop after the current safe boundary | `hill-climber stop EXPERIMENT --json` |
 | Continue unfinished work | `hill-climber resume EXPERIMENT` |
@@ -177,7 +210,8 @@ not been certified.
 |---|---|---|
 | **Hill Climber** | You have a measurable code objective, narrow mutable files, and a private regression set | Requires thoughtful evaluators; five candidates consume more subscription capacity |
 | **Manual Codex** | The task is exploratory, subjective, or needs constant human steering | Human owns comparison, rollback, and experiment memory |
-| **autoresearch-style prompt loop** | You want the smallest possible sequential research protocol | The prompt, not an executable controller, owns keep/revert and resume discipline |
+| **[AutoAgent](https://github.com/thirdlayerinc/autoagent)** | You are optimizing an agent harness against Harbor tasks and want a Docker-based sequential overnight loop | More specialized benchmark/task setup; its public graph is excellent experiment communication |
+| **[autoresearch](https://github.com/karpathy/autoresearch)** | You are optimizing one training program under a fixed GPU-time metric | Deliberately narrow and elegant; the prompt owns most loop discipline |
 | **A custom eval platform** | You need distributed workers, OS isolation, spend accounting, or organization-wide policy | More infrastructure and integration work |
 
 Do not use Hill Climber when quality cannot be scored externally, the target
@@ -190,7 +224,7 @@ surface cannot be bounded.
 - five strategy lanes per default round, with bounded concurrency;
 - detached development grading and a one-time private holdout;
 - repeat seeds, gates, minimum gain, target, plateau, wall, token, and failure
-  budgets;
+  stop conditions;
 - fsynced atomic state plus a hash-chained event ledger;
 - durable prompts, SDK traces, patches, evaluator records, failures, receipt,
   and a graphical SVG run report;
@@ -198,6 +232,12 @@ surface cannot be bounded.
   arbitrary caller secrets;
 - no controller-owned commit to your branch, push, merge, deployment, or
   destructive reset.
+
+Aggregate token and wall thresholds are checked at safe round boundaries.
+Candidate turns already in flight are allowed to finish, so actual usage and
+elapsed time can overshoot `--max-tokens` and `--max-wall-seconds`. Candidate
+count, round count, and per-candidate/evaluator timeouts define the hard outer
+bounds.
 
 ## Evidence
 
@@ -210,9 +250,12 @@ The committed deterministic suite covers:
 - distinct dirty-tree, authentication, SDK, and evaluator failures;
 - manifest, state, and ledger tamper rejection.
 
-The current public CI runs all seven lifecycle tests plus syntax checks and a
-production dependency audit. That evidence validates the controller protocol;
-it does **not** guarantee improvement on an arbitrary repository or evaluator.
+The disclosed real-Codex smoke benchmark adds a full receipt, ledger, patch, and
+score graph for one code task. Public CI runs all eight tests plus
+syntax checks and a production dependency audit. Together these validate the
+controller protocol and one observed improvement; they do **not** establish a
+general success rate or superiority over AutoAgent, autoresearch, manual Codex,
+or any other system.
 
 ## Security boundary
 

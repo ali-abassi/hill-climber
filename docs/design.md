@@ -7,9 +7,11 @@ used current repository code and documentation, not star counts alone.
 ## What the survey found
 
 - [AutoAgent](https://github.com/thirdlayerinc/autoagent) has a strong written
-  baseline → diagnose → one mechanism → benchmark → keep/discard discipline,
-  but its outer loop is a prompt rather than an executable controller. It has
-  no bounded resume state machine or safe rollback implementation.
+  baseline → diagnose → one mechanism → benchmark → keep/discard discipline
+  and communicates real kept/discarded experiments with a running-best graph.
+  Its outer loop is still a prompt rather than an executable controller; the
+  inspected source has no bounded resume state machine or implemented rollback
+  controller.
 - [autoresearch](https://github.com/karpathy/autoresearch) demonstrates a tiny
   mutable surface, a fixed evaluator, seeded measurements, a TSV experiment
   log, and simplicity bias. Its loop is also prompt-driven, sequential, and
@@ -44,9 +46,10 @@ but had no repository license file. No source was copied from either project.
 | Prevent adaptive holdout overfitting | Development evidence may feed later rounds; holdout runs once after search and is never replayed after interruption. |
 | Roll back safely | Rejected worktrees are discarded; the user's source branch is never reset. Only a holdout-promoted patch is applied. |
 | Make recovery mechanical | A frozen manifest, self-hashed state projection, fsynced hash-chained events, artifacts, and one-writer lock define the resume boundary. |
-| Stop finitely | Round, wall, recorded-token, failure, target, and plateau limits are controller-owned. |
+| Stop finitely | Round, failure, target, and plateau limits are controller-owned. Aggregate token and wall thresholds are checked between rounds and can be overshot by in-flight parallel candidates; per-candidate/evaluator timeouts remain hard. |
 | Preserve subscription auth without leaking secrets | The SDK receives only an environment allowlist containing the cached ChatGPT login locations, not arbitrary API keys or CI secrets. |
 | Prefer simpler equal solutions | Score, repeat floor, gates, changed-line count, then candidate ID determine a stable ranking. |
+| Make progress inspectable | Every terminal run renders candidate scores and the round incumbent as a self-contained SVG backed by the same receipt and ledger. |
 
 ## Intentionally deferred
 

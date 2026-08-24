@@ -1,14 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
   <title id="title">Hill Climber logo</title>
-  <desc id="desc">Five routes converge into one path that reaches a mountain summit.</desc>
-  <path fill="#17202a" d="M80 12 146 140H14L80 12Z"/>
-  <g fill="none" stroke="#32d583" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M38 128c8-20 19-28 41-39" stroke-width="5"/>
-    <path d="M58 128c5-18 11-27 21-39" stroke-width="5"/>
-    <path d="M80 128V89" stroke-width="5"/>
-    <path d="M102 128c-5-18-11-27-23-39" stroke-width="5"/>
-    <path d="M122 128c-8-20-19-28-43-39" stroke-width="5"/>
-    <path d="M79 89c-7-12-5-22 7-30 11-8 12-18 3-30" stroke-width="9"/>
+  <desc id="desc">A green rock climber reaches upward while braced against a steep dark rock face.</desc>
+  <path fill="#344056" d="M92 5 148 20l-9 31 11 29-14 26 5 42H55l16-25-5-25 13-18-8-24 13-19Z"/>
+  <g fill="none" stroke="#24d18f" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="53" cy="53" r="10" fill="#24d18f" stroke="none"/>
+    <path d="m57 68 13 21-6 17" stroke-width="15"/>
+    <path d="m62 74 15-19 16-26" stroke-width="11"/>
+    <path d="m67 82 19 2 16-18" stroke-width="10"/>
+    <path d="m64 103-14 16 19 13" stroke-width="12"/>
+    <path d="m69 103 19 11 17-9" stroke-width="12"/>
   </g>
-  <path fill="#32d583" d="m89 23 10 4-9 5-1-9Z"/>
+  <g fill="#24d18f">
+    <circle cx="96" cy="27" r="5"/>
+    <circle cx="105" cy="64" r="5"/>
+    <circle cx="108" cy="109" r="5"/>
+    <path d="M64 128h16l-2 7H65Z"/>
+  </g>
 </svg>

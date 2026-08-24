@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="hill-climber",
         description="Run bounded, evidence-gated Codex SDK hill climbs against a Git repository.",
     )
-    parser.add_argument("--version", action="version", version="hill-climber 0.2.0")
+    parser.add_argument("--version", action="version", version="hill-climber 0.3.0")
     commands = parser.add_subparsers(dest="action", required=True)
 
     run = commands.add_parser("run", help="start a new hill climb")

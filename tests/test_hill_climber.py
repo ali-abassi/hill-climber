@@ -19,6 +19,7 @@ FAKE_SDK = ROOT / "tests" / "fixtures" / "fake_codex_sdk.mjs"
 EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
+BENCHMARK = ROOT / "benchmarks" / "duration"
 PRODUCT_PYTHON = ROOT / ".venv" / "bin" / "python"
 if not PRODUCT_PYTHON.is_file():
     PRODUCT_PYTHON = Path(sys.executable)
@@ -123,6 +124,7 @@ class HillClimberTests(unittest.TestCase):
                 self.assertTrue(report.is_file())
                 report_text = report.read_text(encoding="utf-8")
                 self.assertIn("Hill Climber result: promoted", report_text)
+                self.assertIn("DEVELOPMENT SCORE TRAJECTORY", report_text)
                 self.assertIn("DEV WINNER", report_text)
                 self.assertIn("PROMOTED", report_text)
                 ET.parse(report)
@@ -301,6 +303,12 @@ class HillClimberTests(unittest.TestCase):
             root = Path(raw)
             result, repo, experiment = self.run_climb(root, "easy", apply=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads(result.stdout)["result"]
+            winner_patch = experiment / "winner.patch"
+            self.assertTrue(winner_patch.is_file())
+            self.assertFalse(receipt["applied"])
+            self.assertEqual(receipt["patch"]["sha256"], hashlib.sha256(winner_patch.read_bytes()).hexdigest())
+            self.assertEqual(git(repo, "status", "--porcelain"), "")
             state_path = experiment / "state.json"
             original_state = state_path.read_text(encoding="utf-8")
             state = json.loads(original_state)
@@ -326,6 +334,44 @@ class HillClimberTests(unittest.TestCase):
             )
             self.assertEqual(status.returncode, 3)
             self.assertEqual(json.loads(status.stdout)["error"]["code"], "E_EVIDENCE")
+
+    def test_disclosed_duration_benchmark_receipt_reproduces(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            (repo / "duration.py").write_text(
+                (BENCHMARK / "subject" / "duration.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            def evaluate(phase: str) -> dict[str, object]:
+                result = subprocess.run(
+                    [str(PRODUCT_PYTHON), str(BENCHMARK / "evaluate.py"), phase],
+                    cwd=repo, text=True, capture_output=True, timeout=30, check=True,
+                )
+                return json.loads(result.stdout)
+
+            self.assertEqual(evaluate("development")["metrics"]["passed"], 14)
+            self.assertEqual(evaluate("holdout")["metrics"]["passed"], 4)
+            subprocess.run(
+                ["git", "apply", str(BENCHMARK / "results" / "winner.patch")],
+                cwd=repo, text=True, capture_output=True, timeout=30, check=True,
+            )
+            self.assertEqual(evaluate("development")["score"], 1)
+            self.assertEqual(evaluate("holdout")["score"], 1)
+
+            receipt = json.loads((BENCHMARK / "results" / "receipt.json").read_text(encoding="utf-8"))
+            for key, filename in (("ledger", "events.jsonl"), ("manifest", "manifest.json")):
+                digest = hashlib.sha256((BENCHMARK / "results" / filename).read_bytes()).hexdigest()
+                self.assertEqual(receipt["evidence"][key]["sha256"], digest)
+            self.assertEqual(
+                receipt["patch"]["sha256"],
+                hashlib.sha256((BENCHMARK / "results" / "winner.patch").read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                receipt["report"]["sha256"],
+                hashlib.sha256((BENCHMARK / "results" / "report.svg").read_bytes()).hexdigest(),
+            )
+            ET.parse(BENCHMARK / "results" / "report.svg")
 
 
 if __name__ == "__main__":

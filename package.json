@@ -1,7 +1,7 @@
 {
   "name": "hill-climber",
-  "version": "0.2.0",
-  "description": "Five isolated Codex routes. One holdout-verified patch.",
+  "version": "0.3.0",
+  "description": "Empirical Codex code improvement with isolated candidates, score trajectories, unseen holdouts, and promoted patches.",
   "license": "MIT",
   "author": "Ali Abassi",
   "type": "module",
