@@ -1,0 +1,8 @@
+.github/
+tests/
+AGENTS.md
+CHANGELOG.md
+CONTRIBUTING.md
+node_modules/
+__pycache__/
+*.py[cod]

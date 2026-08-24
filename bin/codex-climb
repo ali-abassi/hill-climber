@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""Thin CLI wrapper for the deterministic Codex SDK hill-climb controller."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CONTROLLER = ROOT / "scripts" / "codex_hill_climb.mjs"
+
+
+def bounded_int(low: int, high: int):
+    def parse(value: str) -> int:
+        try:
+            number = int(value)
+        except ValueError as error:
+            raise argparse.ArgumentTypeError("must be an integer") from error
+        if not low <= number <= high:
+            raise argparse.ArgumentTypeError(f"must be between {low} and {high}")
+        return number
+    return parse
+
+
+def add_common(parser: argparse.ArgumentParser, *, experiment: bool = False) -> None:
+    if experiment:
+        parser.add_argument("experiment", help="exact durable experiment directory")
+    parser.add_argument("--json", action="store_true", help="emit one JSON document on stdout")
+    parser.add_argument("-q", "--quiet", action="store_true", help="suppress progress lines")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="codex-climb",
+        description="Run bounded, evidence-gated Codex SDK hill climbs against a Git repository.",
+    )
+    parser.add_argument("--version", action="version", version="codex-climb 0.1.0")
+    commands = parser.add_subparsers(dest="action", required=True)
+
+    run = commands.add_parser("run", help="start a new hill climb")
+    add_common(run)
+    run.add_argument("--workspace", default=".", help="clean Git repository root")
+    run.add_argument("--task", required=True, help="optimization objective")
+    details = run.add_mutually_exclusive_group()
+    details.add_argument("--details", help="constraints and context")
+    details.add_argument("--details-file", help="read constraints and context from a file")
+    run.add_argument("--eval", required=True, help="development evaluator argv string")
+    run.add_argument("--holdout-eval", required=True, help="private holdout evaluator argv string")
+    run.add_argument("--setup", help="optional dependency setup argv string for isolated worktrees")
+    run.add_argument("--mutable", action="append", required=True,
+                     help="allowed repository-relative glob; repeat as needed")
+    run.add_argument("--candidates", type=bounded_int(1, 20), default=5, metavar="N",
+                     help="candidate neighbors per round (default: 5)")
+    run.add_argument("--rounds", type=bounded_int(1, 100), default=1, metavar="N",
+                     help="maximum rounds (default: 1)")
+    run.add_argument("--generation-parallel", type=bounded_int(1, 8), default=2, metavar="N",
+                     help="concurrent Codex turns (default: 2)")
+    run.add_argument("--repeats", type=bounded_int(1, 10), default=1, metavar="N",
+                     help="paired development evaluation repeats")
+    run.add_argument("--holdout-repeats", type=bounded_int(1, 10), default=1, metavar="N",
+                     help="paired private-holdout repeats")
+    run.add_argument("--model", default="gpt-5.6-terra", help="Codex candidate model")
+    run.add_argument("--reasoning", choices=["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+                     default="medium", help="candidate reasoning effort")
+    run.add_argument("--min-gain", type=float, default=0.0, help="minimum strict score gain")
+    run.add_argument("--target-score", type=float, help="stop when the incumbent reaches this score")
+    run.add_argument("--plateau-rounds", type=bounded_int(1, 100), default=3, metavar="N")
+    run.add_argument("--candidate-timeout", type=bounded_int(1, 86400), default=900, metavar="SECONDS")
+    run.add_argument("--eval-timeout", type=bounded_int(1, 86400), default=300, metavar="SECONDS")
+    run.add_argument("--max-wall-seconds", type=bounded_int(1, 604800), default=7200, metavar="SECONDS")
+    run.add_argument("--max-tokens", type=bounded_int(1, 100_000_000), default=2_000_000, metavar="N")
+    run.add_argument("--max-failures", type=bounded_int(1, 1000), default=10, metavar="N")
+    run.add_argument("--seed", type=int, default=42, help="first paired evaluator seed")
+    run.add_argument("--out", help="new durable experiment directory")
+    run.add_argument("--apply", action=argparse.BooleanOptionalAction, default=True,
+                     help="apply only a holdout-promoted patch (default: true)")
+
+    for name, help_text in (
+        ("resume", "resume only unfinished committed work"),
+        ("status", "verify and summarize durable state"),
+        ("stop", "request a graceful stop and checkpoint"),
+    ):
+        node = commands.add_parser(name, help=help_text)
+        add_common(node, experiment=True)
+    inspect = commands.add_parser("inspect", help="inspect a receipt or candidate trace")
+    add_common(inspect, experiment=True)
+    inspect.add_argument("--candidate", help="candidate id such as r01-c03")
+    return parser
+
+
+def request_from(args: argparse.Namespace) -> dict[str, object]:
+    request: dict[str, object] = {
+        "schema": "codex-hill-climb.v1.request",
+        "action": args.action,
+        "json": args.json,
+        "quiet": args.quiet,
+    }
+    if args.action != "run":
+        request["experiment"] = str(Path(args.experiment).expanduser().resolve())
+        if args.action == "inspect":
+            request["candidate"] = args.candidate
+        return request
+
+    workspace = Path(args.workspace).expanduser().resolve()
+    timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    output = Path(args.out).expanduser().resolve() if args.out else (
+        state_home / "codex-climb" / f"{workspace.name}-{timestamp}"
+    )
+    details = args.details or ""
+    if args.details_file:
+        details = Path(args.details_file).expanduser().read_text(encoding="utf-8")
+    request.update({
+        "workspace": str(workspace),
+        "task": args.task,
+        "details": details,
+        "eval_argv": shlex.split(args.eval),
+        "holdout_argv": shlex.split(args.holdout_eval),
+        "setup_argv": shlex.split(args.setup) if args.setup else [],
+        "mutable": args.mutable,
+        "candidates": args.candidates,
+        "rounds": args.rounds,
+        "generation_parallel": args.generation_parallel,
+        "repeats": args.repeats,
+        "holdout_repeats": args.holdout_repeats,
+        "model": args.model,
+        "reasoning": args.reasoning,
+        "min_gain": args.min_gain,
+        "target_score": args.target_score,
+        "plateau_rounds": args.plateau_rounds,
+        "candidate_timeout_seconds": args.candidate_timeout,
+        "eval_timeout_seconds": args.eval_timeout,
+        "max_wall_seconds": args.max_wall_seconds,
+        "max_tokens": args.max_tokens,
+        "max_failures": args.max_failures,
+        "seed": args.seed,
+        "apply": args.apply,
+        "out": str(output),
+    })
+    return request
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    if not CONTROLLER.is_file():
+        print(f"error: controller is missing: {CONTROLLER}", file=sys.stderr)
+        return 2
+    try:
+        request = request_from(args)
+        result = subprocess.run(
+            ["node", str(CONTROLLER)],
+            input=json.dumps(request),
+            text=True,
+            cwd=Path.cwd(),
+            env=os.environ.copy(),
+            check=False,
+        )
+        return result.returncode
+    except FileNotFoundError:
+        print("error: Node.js 18 or newer is required", file=sys.stderr)
+        return 2
+    except (OSError, UnicodeError, ValueError) as error:
+        print(f"error: cannot start hill climb: {error}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

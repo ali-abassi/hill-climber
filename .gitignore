@@ -1,0 +1,10 @@
+node_modules/
+__pycache__/
+*.py[cod]
+.DS_Store
+.coverage
+.pytest_cache/
+.idea/
+.vscode/
+*.log
+dist/
