@@ -8,6 +8,8 @@
   explains five-candidate selection and private-holdout promotion.
 - Rebuilt the README around a verified quickstart, real receipts, progressive
   disclosure, honest alternatives, and explicit security boundaries.
+- Added an automatic graphical `report.svg` to every completed experiment,
+  including baseline-retained and holdout-reverted outcomes.
 
 ## 0.1.0 — 2026-08-24
 

@@ -36,6 +36,10 @@ RESULT_JSON="$(
     --json --quiet
 )"
 
+if [[ -n "${HILL_CLIMBER_DEMO_REPORT:-}" ]]; then
+  cp "${EXPERIMENT}/report.svg" "${HILL_CLIMBER_DEMO_REPORT}"
+fi
+
 python3 -c '
 import json, sys
 r = json.load(sys.stdin)["result"]
@@ -46,4 +50,5 @@ print("baseline: {:g}".format(r["baseline"]["score"]))
 print("final: {:g}".format(r["incumbent"]["score"]))
 print("holdout: {}".format(r["promotion"]["verdict"]))
 print("applied: {}".format("yes" if r["applied"] else "no"))
+print("report: generated" if r.get("report", {}).get("format") == "image/svg+xml" else "report: missing")
 ' <<<"${RESULT_JSON}"

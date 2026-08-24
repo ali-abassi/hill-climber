@@ -12,6 +12,7 @@
 
   <p>
     <a href="#quickstart">Quickstart</a> ·
+    <a href="#visual-result">Visual result</a> ·
     <a href="#how-the-climb-works">How it works</a> ·
     <a href="#commands">Commands</a> ·
     <a href="#when-to-use-it">When to use it</a> ·
@@ -56,7 +57,20 @@ baseline: 0
 final: 5
 holdout: promoted
 applied: yes
+report: generated
 ```
+
+## Visual result
+
+Every completed experiment automatically writes a self-contained
+`report.svg` beside `receipt.json`. Open it in a browser, attach it to a pull
+request, or render it in any tool that understands SVG. It is generated from
+the same evidence ledger as the machine receipt and covers successful,
+retained, and holdout-reverted runs.
+
+Real `report.svg` from the deterministic quickstart above:
+
+<img src="assets/example-report.svg" width="100%" alt="Hill Climber run report showing five candidate scores, the selected development winner, promoted private holdout, applied patch, token usage, wall time, and round count">
 
 ### Install the real CLI
 
@@ -178,7 +192,8 @@ surface cannot be bounded.
 - repeat seeds, gates, minimum gain, target, plateau, wall, token, and failure
   budgets;
 - fsynced atomic state plus a hash-chained event ledger;
-- durable prompts, SDK traces, patches, evaluator records, failures, and receipt;
+- durable prompts, SDK traces, patches, evaluator records, failures, receipt,
+  and a graphical SVG run report;
 - environment allowlisting for cached subscription auth without forwarding
   arbitrary caller secrets;
 - no controller-owned commit to your branch, push, merge, deployment, or

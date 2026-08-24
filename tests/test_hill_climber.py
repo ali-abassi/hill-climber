@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -118,6 +119,15 @@ class HillClimberTests(unittest.TestCase):
                 self.assertNotIn("...[truncated]", result.stderr)
                 ledger_digest = hashlib.sha256((experiment / "events.jsonl").read_bytes()).hexdigest()
                 self.assertEqual(receipt["evidence"]["ledger"]["sha256"], ledger_digest)
+                report = experiment / "report.svg"
+                self.assertTrue(report.is_file())
+                report_text = report.read_text(encoding="utf-8")
+                self.assertIn("Hill Climber result: promoted", report_text)
+                self.assertIn("DEV WINNER", report_text)
+                self.assertIn("PROMOTED", report_text)
+                ET.parse(report)
+                self.assertEqual(receipt["report"]["format"], "image/svg+xml")
+                self.assertEqual(receipt["report"]["sha256"], hashlib.sha256(report.read_bytes()).hexdigest())
                 self.assert_ledger_chain(experiment)
 
     def test_hidden_holdout_rejects_development_winner_without_touching_source(self) -> None:
@@ -131,6 +141,10 @@ class HillClimberTests(unittest.TestCase):
             self.assertFalse(receipt["applied"])
             self.assertEqual(git(repo, "status", "--porcelain"), "")
             self.assertTrue((experiment / "receipt.json").is_file())
+            report_text = (experiment / "report.svg").read_text(encoding="utf-8")
+            self.assertIn("Hill Climber result: retained", report_text)
+            self.assertIn("REVERTED", report_text)
+            self.assertIn("NO — BASELINE KEPT", report_text)
 
     def test_dirty_repository_is_rejected_before_experiment_creation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -244,6 +258,7 @@ class HillClimberTests(unittest.TestCase):
             self.assertEqual(receipt["promotion"]["reason"], "holdout_interrupted_closed")
             self.assertEqual(receipt["status"], "retained")
             self.assertEqual((repo / "solution.txt").read_text(), "0\n")
+            self.assertTrue((experiment / "report.svg").is_file())
             events = [json.loads(line) for line in (experiment / "events.jsonl").read_text().splitlines()]
             self.assertEqual(sum(event["type"] == "holdout_started" for event in events), 1)
             self.assertEqual(sum(event["type"] == "holdout_abandoned" for event in events), 1)

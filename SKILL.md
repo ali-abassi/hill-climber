@@ -68,6 +68,8 @@ trusted, reproducible dependency command that does not reveal holdout content.
   `hill-climber status EXPERIMENT --json`.
 - Inspect one candidate with
   `hill-climber inspect EXPERIMENT --candidate r01-c03 --json`.
+- Open `EXPERIMENT/report.svg` for the graphical run summary; verify its hash
+  against `receipt.report.sha256` before sharing it as evidence.
 - Stop gracefully with `hill-climber stop EXPERIMENT --json`.
 - After Ctrl-C or recoverable failure, execute the exact emitted
   `hill-climber resume EXPERIMENT` command. Do not delete evidence or manually
@@ -87,7 +89,8 @@ Require all of the following:
 4. `applied` matches the user's requested `--apply`/`--no-apply` behavior.
 5. The source diff stays entirely inside the declared mutable surface.
 6. The receipt records candidate counts, usage, stop reason, evidence paths,
-   and the next action.
+   and the generated `report.svg`; the controller response records the next
+   action.
 
 If the receipt says `retained`, `blocked`, `invalid`, `crashed`, or reports a
 failed gate, explain the evidence and retain the source baseline. Do not turn a

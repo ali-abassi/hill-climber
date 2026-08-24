@@ -122,6 +122,24 @@ function safeLine(value) {
     .trim();
 }
 
+function xml(value) {
+  return safeLine(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function shortLine(value, limit = 80) {
+  const line = safeLine(value);
+  return line.length <= limit ? line : `${line.slice(0, Math.max(0, limit - 1))}…`;
+}
+
+function scoreText(value) {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(3).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1") : "—";
+}
+
 function normalizePath(path) {
   return path.split(sep).join("/").replace(/^\.\//, "");
 }
@@ -1257,6 +1275,153 @@ function applyWinner(context) {
   return patchPath;
 }
 
+function reportCandidates(context) {
+  const candidates = new Map();
+  for (const record of context.ledger.records) {
+    const payload = record.payload ?? {};
+    const candidateId = payload.candidate_id;
+    if (!candidateId) continue;
+    const candidate = candidates.get(candidateId) ?? {
+      id: candidateId,
+      round: payload.round ?? null,
+      index: payload.index ?? null,
+      strategy: null,
+      score: null,
+      gates: null,
+      status: "started",
+      reason: null,
+    };
+    if (record.type === "candidate_started") candidate.strategy = payload.strategy;
+    if (record.type === "candidate_evaluated") {
+      candidate.score = payload.evaluation?.score ?? null;
+      candidate.gates = payload.evaluation?.gates_passed ?? null;
+      candidate.status = "evaluated";
+    }
+    if (record.type === "candidate_kept") {
+      candidate.status = "kept";
+      candidate.reason = payload.reason ?? null;
+    }
+    if (record.type === "candidate_rejected") {
+      candidate.status = "rejected";
+      candidate.reason = payload.reason ?? null;
+    }
+    if (record.type === "candidate_invalid" || record.type === "candidate_crashed") {
+      candidate.status = record.type === "candidate_invalid" ? "invalid" : "crashed";
+      candidate.reason = payload.code ?? payload.error ?? null;
+    }
+    candidates.set(candidateId, candidate);
+  }
+  return [...candidates.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function renderReport(context, receipt) {
+  const allCandidates = reportCandidates(context);
+  const kept = context.ledger.records.filter((record) => record.type === "candidate_kept").at(-1)?.payload ?? null;
+  const selectedId = kept?.candidate_id ?? null;
+  const selected = allCandidates.find((candidate) => candidate.id === selectedId) ?? null;
+  const visible = allCandidates.slice(0, 10);
+  if (selected && !visible.some((candidate) => candidate.id === selected.id)) visible[visible.length - 1] = selected;
+  const rows = Math.max(1, Math.ceil(visible.length / 5));
+  const candidatesHeight = rows * 142 + (rows - 1) * 14;
+  const verdictY = 352 + candidatesHeight + 34;
+  const height = verdictY + 224;
+  const promoted = receipt.status === "promoted";
+  const accent = promoted ? "#32d583" : "#f5b942";
+  const statusLabel = promoted ? "PROMOTED" : "RETAINED";
+  const holdout = receipt.promotion?.holdout_used
+    ? String(receipt.promotion.verdict ?? "complete").toUpperCase()
+    : "NOT RUN";
+  const holdoutBaseline = receipt.promotion?.baseline?.score;
+  const holdoutCandidate = receipt.promotion?.candidate?.score;
+  const developmentWinner = selected?.score ?? (selectedId ? kept?.score : receipt.baseline.score);
+  const hiddenCount = Math.max(0, allCandidates.length - visible.length);
+  const candidateCards = visible.map((candidate, offset) => {
+    const col = offset % 5;
+    const row = Math.floor(offset / 5);
+    const x = 40 + col * 224;
+    const y = 352 + row * 156;
+    const isSelected = candidate.id === selectedId;
+    const color = isSelected ? "#32d583" : candidate.status === "rejected" ? "#59657a" :
+      candidate.status === "invalid" || candidate.status === "crashed" ? "#f97066" : "#8b98ad";
+    const label = isSelected ? "DEV WINNER" : candidate.status.toUpperCase();
+    return `
+      <g>
+        <rect x="${x}" y="${y}" width="208" height="142" rx="14" fill="#111a2c" stroke="${color}" stroke-width="${isSelected ? 2 : 1}"/>
+        <circle cx="${x + 20}" cy="${y + 23}" r="5" fill="${color}"/>
+        <text x="${x + 34}" y="${y + 28}" class="candidate">${xml(candidate.id)}</text>
+        <text x="${x + 16}" y="${y + 58}" class="muted">${xml(shortLine(candidate.strategy ?? "candidate route", 24))}</text>
+        <text x="${x + 16}" y="${y + 101}" class="score-small">${xml(scoreText(candidate.score))}</text>
+        <text x="${x + 16}" y="${y + 124}" class="label" fill="${color}">${xml(label)}</text>
+      </g>`;
+  }).join("");
+  const task = xml(shortLine(receipt.task, 128));
+  const verdictDetail = receipt.promotion?.holdout_used
+    ? `baseline ${scoreText(holdoutBaseline)} → candidate ${scoreText(holdoutCandidate)}`
+    : "No development winner reached the private holdout";
+  const applied = receipt.applied ? "YES — PATCH APPLIED" : promoted ? "NO — PATCH SAVED" : "NO — BASELINE KEPT";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}" viewBox="0 0 1200 ${height}" role="img" aria-labelledby="title desc">
+  <title id="title">Hill Climber result: ${xml(statusLabel.toLowerCase())}</title>
+  <desc id="desc">Baseline and candidate scores, selected development route, private holdout verdict, usage, and application state.</desc>
+  <style>
+    text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .eyebrow { fill: #32d583; font-size: 13px; font-weight: 800; letter-spacing: 2.2px; }
+    .title { fill: #f7f9fc; font-size: 34px; font-weight: 760; }
+    .task { fill: #aab4c5; font-size: 15px; }
+    .label { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; }
+    .muted { fill: #8b98ad; font-size: 12px; }
+    .candidate { fill: #e8edf5; font-size: 14px; font-weight: 700; }
+    .score { fill: #f7f9fc; font-size: 32px; font-weight: 760; }
+    .score-small { fill: #f7f9fc; font-size: 26px; font-weight: 760; }
+    .body { fill: #c6cfdd; font-size: 15px; }
+    .metric { fill: #f7f9fc; font-size: 17px; font-weight: 700; }
+  </style>
+  <rect width="1200" height="${height}" rx="24" fill="#081120"/>
+  <path d="M0 0h1200v6H0z" fill="${accent}"/>
+  <text x="40" y="48" class="eyebrow">HILL CLIMBER · VERIFIED RUN REPORT</text>
+  <text x="40" y="92" class="title">${allCandidates.length} routes in. One evidence-backed outcome.</text>
+  <rect x="1016" y="35" width="144" height="42" rx="21" fill="${accent}" fill-opacity=".13" stroke="${accent}"/>
+  <text x="1088" y="61" class="label" fill="${accent}" text-anchor="middle">${xml(statusLabel)}</text>
+  <text x="40" y="124" class="task">${task}</text>
+
+  <rect x="40" y="154" width="1120" height="132" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="64" y="184" class="label" fill="#8b98ad">DEVELOPMENT SCORE</text>
+  <text x="64" y="236" class="score">${xml(scoreText(receipt.baseline.score))}</text>
+  <text x="159" y="232" fill="#59657a" font-size="28">→</text>
+  <text x="210" y="236" class="score" fill="${selected ? "#32d583" : "#f7f9fc"}">${xml(scoreText(developmentWinner))}</text>
+  <text x="64" y="263" class="muted">baseline</text>
+  <text x="210" y="263" class="muted">${xml(selectedId ?? "baseline retained")}</text>
+  <path d="M420 180v80" stroke="#26344c"/>
+  <text x="456" y="201" class="label" fill="#8b98ad">PRIVATE HOLDOUT</text>
+  <text x="456" y="238" class="metric" fill="${accent}">${xml(holdout)}</text>
+  <text x="456" y="263" class="muted">${xml(verdictDetail)}</text>
+  <path d="M810 180v80" stroke="#26344c"/>
+  <text x="846" y="201" class="label" fill="#8b98ad">SOURCE CHECKOUT</text>
+  <text x="846" y="238" class="metric">${xml(applied)}</text>
+  <text x="846" y="263" class="muted">${xml(shortLine(receipt.terminal_reason, 34))}</text>
+
+  <text x="40" y="326" class="label" fill="#8b98ad">CANDIDATE ROUTES · ${allCandidates.length} ATTEMPTED${hiddenCount ? ` · ${hiddenCount} MORE IN RECEIPT` : ""}</text>
+  ${candidateCards}
+
+  <rect x="40" y="${verdictY}" width="1120" height="154" rx="18" fill="#0d1728" stroke="${accent}" stroke-opacity=".8"/>
+  <circle cx="72" cy="${verdictY + 38}" r="10" fill="${accent}"/>
+  <text x="96" y="${verdictY + 45}" class="metric">${promoted ? "Holdout verified the winner" : "The baseline was safely retained"}</text>
+  <text x="64" y="${verdictY + 77}" class="body">${promoted ? "The promoted patch cleared development selection and the private holdout." : "No candidate was applied because the final promotion boundary did not pass."}</text>
+  <text x="64" y="${verdictY + 120}" class="label" fill="#8b98ad">CANDIDATES</text>
+  <text x="166" y="${verdictY + 120}" class="metric">${receipt.counts.candidates}</text>
+  <text x="260" y="${verdictY + 120}" class="label" fill="#8b98ad">KEPT</text>
+  <text x="318" y="${verdictY + 120}" class="metric">${receipt.counts.kept}</text>
+  <text x="390" y="${verdictY + 120}" class="label" fill="#8b98ad">REJECTED</text>
+  <text x="480" y="${verdictY + 120}" class="metric">${receipt.counts.rejected}</text>
+  <text x="570" y="${verdictY + 120}" class="label" fill="#8b98ad">TOKENS</text>
+  <text x="642" y="${verdictY + 120}" class="metric">${usageTotal(receipt.usage)}</text>
+  <text x="750" y="${verdictY + 120}" class="label" fill="#8b98ad">WALL</text>
+  <text x="802" y="${verdictY + 120}" class="metric">${receipt.wall_seconds}s</text>
+  <text x="930" y="${verdictY + 120}" class="label" fill="#8b98ad">ROUNDS</text>
+  <text x="1005" y="${verdictY + 120}" class="metric">${receipt.rounds_completed}</text>
+  <text x="40" y="${height - 24}" class="muted">experiment ${xml(receipt.experiment_id)} · ${xml(receipt.completed_at)} · machine receipt: receipt.json</text>
+</svg>\n`;
+}
+
 function makeReceipt(context, promotionResult, patchPath) {
   if (context.ledger.records.at(-1)?.type !== "receipt_prepared") {
     append(context, "receipt_prepared", {
@@ -1288,6 +1453,9 @@ function makeReceipt(context, promotionResult, patchPath) {
     wall_seconds: Number(((Date.now() - Date.parse(context.manifest.created_at)) / 1000).toFixed(3)),
     completed_at: now(),
   };
+  const reportPath = join(context.experiment, "report.svg");
+  atomicWrite(reportPath, renderReport(context, receipt));
+  receipt.report = { path: reportPath, sha256: fileSha256(reportPath), format: "image/svg+xml" };
   const path = join(context.experiment, "receipt.json");
   atomicWrite(path, receipt);
   return receipt;
@@ -1369,6 +1537,7 @@ function emit(config, payload) {
     process.stdout.write(`candidates ${result.counts.candidates} | kept ${result.counts.kept} | rejected ${result.counts.rejected} | invalid ${result.counts.invalid} | crashed ${result.counts.crashed}\n`);
     process.stdout.write(`tokens ${usageTotal(result.usage)} | wall ${result.wall_seconds}s | stop ${result.terminal_reason}\n`);
     process.stdout.write(`evidence ${payload.experiment}/receipt.json\n`);
+    process.stdout.write(`report ${payload.experiment}/report.svg\n`);
     process.stdout.write(`applied ${result.applied ? "yes" : "no"}\n`);
     process.stdout.write(`next ${payload.next_action.join(" ")}\n`);
   } else {
