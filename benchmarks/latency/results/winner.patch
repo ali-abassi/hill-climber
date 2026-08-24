@@ -1,0 +1,21 @@
+diff --git a/dedupe.py b/dedupe.py
+index bbae063..3b89733 100644
+--- a/dedupe.py
++++ b/dedupe.py
+@@ -7,11 +7,12 @@ from __future__ import annotations
+ 
+ 
+ def find_duplicates(records: list[dict]) -> list[int]:
+-    seen: list[dict] = []
++    seen: set[int] = set()
+     duplicates: list[int] = []
+     for record in records:
+-        if any(previous["id"] == record["id"] for previous in seen):
+-            duplicates.append(record["id"])
++        record_id = record["id"]
++        if record_id in seen:
++            duplicates.append(record_id)
+         else:
+-            seen.append(record)
++            seen.add(record_id)
+     return duplicates

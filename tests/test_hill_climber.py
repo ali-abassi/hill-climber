@@ -19,6 +19,7 @@ FAKE_SDK = ROOT / "tests" / "fixtures" / "fake_codex_sdk.mjs"
 EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 ENV_PROBE_EVALUATOR = ROOT / "tests" / "fixtures" / "env_probe_evaluator.py"
 MULTIFILE_EVALUATOR = ROOT / "tests" / "fixtures" / "multifile_evaluator.py"
+LATENCY_BENCHMARK = ROOT / "benchmarks" / "latency"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 INVALID_FEEDBACK_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_feedback_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
@@ -541,6 +542,64 @@ class HillClimberTests(unittest.TestCase):
                 hashlib.sha256((BENCHMARK / "results" / "report.svg").read_bytes()).hexdigest(),
             )
             ET.parse(BENCHMARK / "results" / "report.svg")
+
+    def test_disclosed_latency_benchmark_receipt_reproduces(self) -> None:
+        results = LATENCY_BENCHMARK / "results"
+        # A wall-time claim is machine-dependent, so this verifies the two
+        # things that must hold anywhere: the promoted patch preserves
+        # behaviour, and it removes the quadratic cost. Absolute seconds from
+        # the disclosed run are not asserted.
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            (repo / "dedupe.py").write_text(
+                (LATENCY_BENCHMARK / "subject" / "dedupe.py").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            def evaluate(phase: str) -> dict[str, object]:
+                result = subprocess.run(
+                    [str(PRODUCT_PYTHON), str(LATENCY_BENCHMARK / "evaluate.py"), phase, "0.05"],
+                    cwd=repo, text=True, capture_output=True, timeout=120, check=True,
+                )
+                return json.loads(result.stdout)
+
+            before = {phase: evaluate(phase) for phase in ("development", "holdout")}
+            for phase, payload in before.items():
+                self.assertTrue(payload["gates"]["correct"], f"{phase} baseline must be correct")
+
+            subprocess.run(
+                ["git", "apply", str(results / "winner.patch")],
+                cwd=repo, text=True, capture_output=True, timeout=30, check=True,
+            )
+
+            after = {phase: evaluate(phase) for phase in ("development", "holdout")}
+            for phase, payload in after.items():
+                # Behaviour preserved: this is the gate a "fast" wrong answer fails.
+                self.assertTrue(payload["gates"]["correct"], f"{phase} patch must stay correct")
+                # Quadratic cost removed. The disclosed run measured >7000x; a
+                # 10x floor proves the asymptotic change without depending on
+                # the speed or load of whatever machine runs this.
+                speedup = abs(before[phase]["score"]) / abs(payload["score"])
+                self.assertGreater(speedup, 10.0, f"{phase} speedup was only {speedup:.1f}x")
+
+            receipt = json.loads((results / "receipt.json").read_text(encoding="utf-8"))
+            self.assertEqual(receipt["status"], "promoted")
+            self.assertEqual(receipt["counts"],
+                             {"candidates": 5, "crashed": 0, "invalid": 0, "kept": 1, "rejected": 4})
+            # The disclosed run must itself have been independently verified.
+            self.assertIs(receipt["promotion"]["holdout_independent"], True)
+            self.assertTrue(receipt["promotion"]["holdout_used"])
+            # Repeats above 1 are what make the repeat-robustness gate meaningful.
+            self.assertGreaterEqual(len(receipt["baseline"]["scores"]), 3)
+            self.assertGreaterEqual(len(receipt["incumbent"]["scores"]), 3)
+
+            for key, filename in (("ledger", "events.jsonl"), ("manifest", "manifest.json")):
+                digest = hashlib.sha256((results / filename).read_bytes()).hexdigest()
+                self.assertEqual(receipt["evidence"][key]["sha256"], digest)
+            for key, filename in (("patch", "winner.patch"), ("report", "report.svg")):
+                digest = hashlib.sha256((results / filename).read_bytes()).hexdigest()
+                self.assertEqual(receipt[key]["sha256"], digest)
+            ET.parse(results / "report.svg")
 
     def test_disclosed_protocol_receipt_is_internally_verified(self) -> None:
         results = PROTOCOL_BENCHMARK / "results"

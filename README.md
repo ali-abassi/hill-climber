@@ -183,10 +183,24 @@ saying so. Treat a sub-noise "gain" as unproven no matter what the receipt says.
 
 ## Benchmark receipt
 
-The repository includes one small, disclosed smoke benchmark: repair an
-incomplete compound-duration parser without editing its evaluator. It was run
-with the real Codex SDK—not the deterministic demo generator—using
-`gpt-5.6-terra`, medium reasoning, five candidates, one round, and `--no-apply`.
+The repository includes two small, disclosed smoke benchmarks, both run with the
+real Codex SDK—not the deterministic demo generator—using `gpt-5.6-terra`,
+medium reasoning, five candidates, one round, and `--no-apply`. Each is one
+task, one model, one configuration, one run; neither establishes a general
+success rate.
+
+| Benchmark | Measures | Baseline → promoted | On unseen holdout |
+|---|---|---|---|
+| [`duration`](benchmarks/duration) | Correctness | 4/12 → 12/12 cases | 12/12 |
+| [`latency`](benchmarks/latency) | Wall time | 5.851s → 0.000769s (7,611×) | 8,342× on a larger, differently-seeded workload |
+
+The `latency` benchmark holds correctness as a hard gate, so a faster function
+that changes behaviour scores `-1e9` rather than winning. All five of its
+candidates passed that gate, making the ranking a real choice among working
+implementations.
+
+The correctness benchmark below repairs an incomplete compound-duration parser
+without editing its evaluator.
 
 <img src="benchmarks/duration/results/report.svg" width="100%" alt="The disclosed real Codex smoke benchmark showing five candidate scores, one selected development winner, and private holdout promotion">
 
