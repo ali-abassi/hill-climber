@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "hill-climber"
 FAKE_SDK = ROOT / "tests" / "fixtures" / "fake_codex_sdk.mjs"
 EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
+ENV_PROBE_EVALUATOR = ROOT / "tests" / "fixtures" / "env_probe_evaluator.py"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 INVALID_FEEDBACK_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_feedback_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
@@ -197,6 +198,27 @@ class HillClimberTests(unittest.TestCase):
             self.assertIn("Hill Climber result: retained", report_text)
             self.assertIn("REVERTED", report_text)
             self.assertIn("NO — BASELINE KEPT", report_text)
+
+    def test_env_flag_reaches_evaluators_additively_without_leaking_parent_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo = self.make_repo(root)
+            experiment = root / "experiment"
+            evaluator = shlex.join([str(PRODUCT_PYTHON), str(ENV_PROBE_EVALUATOR)])
+            command = [
+                str(PRODUCT_PYTHON), str(CLI), "run", "--workspace", str(repo),
+                "--task", "noop", "--eval", evaluator, "--holdout-eval", evaluator,
+                "--env", "HC_TEST_PROBE=reached", "--mutable", "solution.txt",
+                "--candidates", "1", "--out", str(experiment), "--json", "--no-apply",
+            ]
+            environment = self.environment(root, "easy")
+            environment["HC_TEST_SECRET"] = "must-not-leak"
+            result = subprocess.run(command, cwd=repo, env=environment,
+                                    text=True, capture_output=True, timeout=30, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            baseline_repeat = experiment / "evaluations" / "baseline" / "development" / "repeat-1.json"
+            payload = json.loads(baseline_repeat.read_text(encoding="utf-8"))
+            self.assertEqual(payload["details"], "probe=reached secret=MISSING")
 
     def test_dirty_repository_is_rejected_before_experiment_creation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

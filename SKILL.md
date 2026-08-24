@@ -61,6 +61,11 @@ hill-climber run \
 Quote each evaluator as one shell-style argv string. Use absolute evaluator
 paths. Repeat `--mutable` for multiple surfaces. Add `--setup` only for a
 trusted, reproducible dependency command that does not reveal holdout content.
+Evaluator, holdout-evaluator, and setup commands only see a fixed, minimal
+environment (`HOME`, `PATH`, `HILL_CLIMBER_*`, ...) — never the parent shell's
+full environment. Repeat `--env KEY=VAL` to add exactly the variables an
+evaluator needs (for example a device flag or log level); nothing else
+crosses that boundary.
 
 ## Supervision and recovery
 

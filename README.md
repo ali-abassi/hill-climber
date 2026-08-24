@@ -192,6 +192,7 @@ and the complete experiment was rerun from the untouched baseline.
 | You want to… | Run |
 |---|---|
 | Start a bounded search | `hill-climber run …` |
+| Pass an evaluator-only env var | `hill-climber run … --env LOG_LEVEL=debug` (repeatable) |
 | Verify current state | `hill-climber status EXPERIMENT --json` |
 | Read the receipt | `hill-climber inspect EXPERIMENT --json` |
 | View the score trajectory | Open `EXPERIMENT/report.svg` in a browser |
@@ -249,7 +250,9 @@ promotion. See the complete [LLM-judged visual climb protocol](docs/llm-judged-v
 - durable prompts, SDK traces, patches, evaluator records, failures, receipt,
   and a graphical SVG run report;
 - environment allowlisting for cached subscription auth without forwarding
-  arbitrary caller secrets;
+  arbitrary caller secrets, plus opt-in `--env KEY=VAL` (repeatable) so
+  setup/evaluator/holdout-evaluator commands can request exactly the extra
+  variables they need;
 - no controller-owned commit to your branch, push, merge, deployment, or
   destructive reset.
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Added `--env KEY=VAL` (repeatable) so setup, evaluator, and holdout-evaluator
+  commands can receive exactly the extra environment variables they need.
+  Still additive on top of the fixed sanitized environment; the parent
+  shell's other variables never reach evaluators or candidate worktrees.
+  Found via a 9-task live-repo test pass (real Codex-generated candidates,
+  verified holdout speedups from 1.1x to 230x) that hit `KeyError` in an
+  evaluator relying on an inherited env var.
+
 ## 0.4.0 — 2026-08-24
 
 - Added bounded actionable evaluator feedback and preserved per-repeat metrics

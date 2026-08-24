@@ -166,6 +166,21 @@ function ensureInside(root, path, label) {
   return target;
 }
 
+function normalizeExtraEnv(value) {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new ClimbError("E_USAGE", "env must be a flat KEY->VAL object");
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v !== "string") {
+      throw new ClimbError("E_USAGE", `env.${k} must be a string`);
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
 function sanitizeEnv(extra = {}) {
   const allowed = [
     "HOME", "PATH", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR",
@@ -428,6 +443,9 @@ function validateConfig(config) {
     if (!Array.isArray(config.mutable) || !config.mutable.length) {
       throw new ClimbError("E_USAGE", "at least one mutable glob is required");
     }
+    if (config.env !== undefined && (typeof config.env !== "object" || config.env === null || Array.isArray(config.env))) {
+      throw new ClimbError("E_USAGE", "env must be a flat KEY->VAL object");
+    }
   } else if (!config.experiment) {
     throw new ClimbError("E_USAGE", `hill-climber ${config.action} requires an experiment path`);
   }
@@ -593,6 +611,7 @@ function createContext(request) {
     eval_argv: request.eval_argv,
     holdout_argv: request.holdout_argv,
     setup_argv: request.setup_argv ?? [],
+    extra_env: normalizeExtraEnv(request.env),
     mutable: request.mutable.map(normalizePath),
     candidates: request.candidates,
     rounds: request.rounds,
@@ -698,7 +717,7 @@ async function prepareWorktree(context, worktree) {
   if (!context.config.setup_argv.length) return;
   const result = await runProcess(context.config.setup_argv, {
     cwd: worktree,
-    env: sanitizeEnv({ HILL_CLIMBER_PHASE: "setup" }),
+    env: sanitizeEnv({ HILL_CLIMBER_PHASE: "setup", ...context.config.extra_env }),
     timeoutSeconds: context.config.eval_timeout_seconds,
     signal: context.abortController.signal,
   });
@@ -725,6 +744,7 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
           HILL_CLIMBER_PHASE: phase,
           HILL_CLIMBER_SEED: String(seed),
           HILL_CLIMBER_CANDIDATE: id,
+          ...context.config.extra_env,
         }),
         timeoutSeconds: context.config.eval_timeout_seconds,
         signal: context.abortController.signal,

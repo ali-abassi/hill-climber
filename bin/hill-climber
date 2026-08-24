@@ -7,10 +7,35 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def parse_env_pairs(pairs: list[str]) -> dict[str, str]:
+    """Parse repeatable `--env KEY=VAL` flags into a flat dict.
+
+    Empty values are allowed (the var is just unset for that evaluator).
+    Names must be POSIX-style identifiers; values are taken literally.
+    """
+    out: dict[str, str] = {}
+    for raw in pairs or []:
+        if "=" not in raw:
+            raise SystemExit(
+                f"hill-climber: --env expects KEY=VAL (got {raw!r})"
+            )
+        key, _, value = raw.partition("=")
+        if not _ENV_KEY_RE.match(key):
+            raise SystemExit(
+                f"hill-climber: --env key {key!r} is not a valid POSIX identifier"
+            )
+        out[key] = value
+    return out
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--eval", required=True, help="development evaluator argv string")
     run.add_argument("--holdout-eval", required=True, help="private holdout evaluator argv string")
     run.add_argument("--setup", help="optional dependency setup argv string for isolated worktrees")
+    run.add_argument("--env", action="append", default=[],
+                     metavar="KEY=VAL",
+                     help="extra environment variable exposed to setup, evaluator, "
+                          "and holdout-evaluator commands (repeat as needed); only "
+                          "additive, never inherits the parent shell")
     run.add_argument("--mutable", action="append", required=True,
                      help="allowed repository-relative glob; repeat as needed")
     run.add_argument("--candidates", type=bounded_int(1, 20), default=5, metavar="N",
@@ -124,6 +154,7 @@ def request_from(args: argparse.Namespace) -> dict[str, object]:
         "eval_argv": shlex.split(args.eval),
         "holdout_argv": shlex.split(args.holdout_eval),
         "setup_argv": shlex.split(args.setup) if args.setup else [],
+        "env": parse_env_pairs(args.env),
         "mutable": args.mutable,
         "candidates": args.candidates,
         "rounds": args.rounds,
