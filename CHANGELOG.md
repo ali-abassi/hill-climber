@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added `benchmarks/iteration`, a disclosed controlled experiment on whether
+  rounds actually help. Every previous disclosed run was single-round, and the
+  only multi-round evidence used a deterministic generator, so the premise the
+  project is named after was untested with a real model. At an identical
+  16-candidate budget, multi-round (4x4) produced a promoted patch 6.8% faster
+  than one-shot (16x1) -- Mann-Whitney n=25 per arm, p=0.000003 -- for 71% more
+  tokens. Rounds 3 and 4 found nothing, so `--rounds 2` was the efficient
+  setting on that task. Includes `verify_task_suitability.py`, which rejected
+  the first candidate task because a single O(n^2) fix captured 93.6% of the
+  achievable gain, before any tokens were spent.
 - Refused a holdout evaluator tracked inside the source repository with
   `E_HOLDOUT_EXPOSED`, before any candidate is generated. Every candidate
   worktree is a full clone, so a tracked holdout was readable by every

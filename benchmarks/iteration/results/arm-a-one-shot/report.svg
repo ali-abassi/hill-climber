@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+  <title id="title">Hill Climber result: promoted</title>
+  <desc id="desc">A multi-round hill climb showing every candidate, rejected routes, verified incumbent steps, private holdout verdict, usage, and application state.</desc>
+  <style>
+    text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .eyebrow { fill: #32d583; font-size: 13px; font-weight: 800; letter-spacing: 2.2px; }
+    .title { fill: #f7f9fc; font-size: 34px; font-weight: 760; }
+    .task { fill: #aab4c5; font-size: 15px; }
+    .label { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; }
+    .muted { fill: #8b98ad; font-size: 12px; }
+    .score { fill: #f7f9fc; font-size: 32px; font-weight: 760; }
+    .body { fill: #c6cfdd; font-size: 15px; }
+    .metric { fill: #f7f9fc; font-size: 17px; font-weight: 700; }
+    .axis { fill: #718096; font-size: 11px; }
+    .round { fill: #5f718c; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; }
+    .grid { stroke: #26344c; stroke-width: 1; stroke-dasharray: 3 5; }
+    .route { fill: none; }
+    .route-rejected { stroke: #66758d; stroke-width: 1.25; stroke-dasharray: 4 4; stroke-opacity: .48; }
+    .route-kept { stroke: #32d583; stroke-width: 2; stroke-opacity: .72; }
+    .selected { fill: #32d583; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
+  </style>
+  <rect width="1200" height="820" rx="24" fill="#081120"/>
+  <path d="M0 0h1200v6H0z" fill="#32d583"/>
+  <text x="40" y="48" class="eyebrow">HILL CLIMBER · VERIFIED RUN REPORT</text>
+  <text x="40" y="92" class="title">1 round. 1 verified climb.</text>
+  <rect x="1016" y="35" width="144" height="42" rx="21" fill="#32d583" fill-opacity=".13" stroke="#32d583"/>
+  <text x="1088" y="61" class="label" fill="#32d583" text-anchor="middle">PROMOTED</text>
+  <text x="40" y="124" class="task">Reduce the wall time of summarize in textstats.py without changing its results</text>
+
+  <rect x="40" y="154" width="1120" height="402" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="64" y="188" class="label" fill="#8b98ad">VERIFIED HILL-CLIMB TRAJECTORY</text>
+  <line x1="786" y1="184" x2="818" y2="184" stroke="#32d583" stroke-width="4"/>
+  <text x="826" y="188" class="axis">best verified</text>
+  <circle cx="966" cy="184" r="5" fill="#66758d"/>
+  <text x="978" y="188" class="axis">rejected</text>
+  <circle cx="1054" cy="184" r="6" fill="#32d583"/>
+  <text x="1066" y="188" class="axis">kept</text>
+  <rect x="100" y="228" width="1032" height="264" fill="#111f34" fill-opacity=".52"/>
+      <text x="616" y="246" class="round" text-anchor="middle">ROUND 1</text>
+  <line x1="100" y1="492" x2="1132" y2="492" class="grid"/>
+    <text x="86" y="496" class="axis" text-anchor="end">-0.616</text>
+<line x1="100" y1="426" x2="1132" y2="426" class="grid"/>
+    <text x="86" y="430" class="axis" text-anchor="end">-0.48</text>
+<line x1="100" y1="360" x2="1132" y2="360" class="grid"/>
+    <text x="86" y="364" class="axis" text-anchor="end">-0.344</text>
+<line x1="100" y1="294" x2="1132" y2="294" class="grid"/>
+    <text x="86" y="298" class="axis" text-anchor="end">-0.208</text>
+<line x1="100" y1="228" x2="1132" y2="228" class="grid"/>
+    <text x="86" y="232" class="axis" text-anchor="end">-0.072</text>
+  <path d="M 100 466.4516129032258 H 164.5 H 229 H 293.5 H 358 H 422.5 H 487 H 551.5 H 616 H 680.5 H 745 H 809.5 H 874 H 938.5 H 1003 H 1067.5 H 1132 V 253.5483870967742 L 1132 492 L 100 492 Z" fill="#32d583" fill-opacity=".07"/>
+  <line data-candidate="r01-c01" class="route route-rejected" x1="100" y1="466.4516129032258" x2="164.5" y2="353.7642968370275"/>
+<line data-candidate="r01-c02" class="route route-rejected" x1="100" y1="466.4516129032258" x2="229" y2="414.87957371636725"/>
+<line data-candidate="r01-c03" class="route route-rejected" x1="100" y1="466.4516129032258" x2="293.5" y2="348.84687860311055"/>
+<line data-candidate="r01-c04" class="route route-rejected" x1="100" y1="466.4516129032258" x2="358" y2="261.3451847143442"/>
+<line data-candidate="r01-c05" class="route route-rejected" x1="100" y1="466.4516129032258" x2="422.5" y2="402.7059035692334"/>
+<line data-candidate="r01-c06" class="route route-rejected" x1="100" y1="466.4516129032258" x2="487" y2="359.0743354944243"/>
+<line data-candidate="r01-c07" class="route route-rejected" x1="100" y1="466.4516129032258" x2="551.5" y2="349.8140531869513"/>
+<line data-candidate="r01-c08" class="route route-rejected" x1="100" y1="466.4516129032258" x2="616" y2="264.2030326272014"/>
+<line data-candidate="r01-c09" class="route route-rejected" x1="100" y1="466.4516129032258" x2="680.5" y2="362.69745588650676"/>
+<line data-candidate="r01-c10" class="route route-rejected" x1="100" y1="466.4516129032258" x2="745" y2="264.3113640719637"/>
+<line data-candidate="r01-c11" class="route route-kept" x1="100" y1="466.4516129032258" x2="809.5" y2="253.5483870967742"/>
+<line data-candidate="r01-c12" class="route route-rejected" x1="100" y1="466.4516129032258" x2="874" y2="359.8595362671273"/>
+<line data-candidate="r01-c13" class="route route-rejected" x1="100" y1="466.4516129032258" x2="938.5" y2="349.49308788717804"/>
+<line data-candidate="r01-c14" class="route route-rejected" x1="100" y1="466.4516129032258" x2="1003" y2="260.46947868948484"/>
+<line data-candidate="r01-c15" class="route route-rejected" x1="100" y1="466.4516129032258" x2="1067.5" y2="262.17815119629813"/>
+<line data-candidate="r01-c16" class="route route-rejected" x1="100" y1="466.4516129032258" x2="1132" y2="348.75157667513787"/>
+  <path d="M 100 466.4516129032258 H 164.5 H 229 H 293.5 H 358 H 422.5 H 487 H 551.5 H 616 H 680.5 H 745 H 809.5 H 874 H 938.5 H 1003 H 1067.5 H 1132 V 253.5483870967742" fill="none" stroke="#32d583" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="100" cy="466.4516129032258" r="6" fill="#58a6ff" stroke="#081120" stroke-width="2"/>
+  <circle cx="164.5" cy="353.7642968370275" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="229" cy="414.87957371636725" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="293.5" cy="348.84687860311055" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="358" cy="261.3451847143442" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="422.5" cy="402.7059035692334" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="487" cy="359.0743354944243" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="551.5" cy="349.8140531869513" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="616" cy="264.2030326272014" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="680.5" cy="362.69745588650676" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="745" cy="264.3113640719637" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="809.5" cy="253.5483870967742" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 809.5 262.5483870967742V 275.5483870967742" stroke="#32d583" stroke-width="1"/>
+      <text x="809.5" y="287.5483870967742" class="selected" text-anchor="middle">DEV WINNER · r01-c11 · -0.125</text>
+<circle cx="874" cy="359.8595362671273" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="938.5" cy="349.49308788717804" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="1003" cy="260.46947868948484" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="1067.5" cy="262.17815119629813" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="1132" cy="348.75157667513787" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+  <text x="164.5" y="517" class="axis" text-anchor="middle">1</text><text x="229" y="517" class="axis" text-anchor="middle">2</text><text x="358" y="517" class="axis" text-anchor="middle">4</text><text x="487" y="517" class="axis" text-anchor="middle">6</text><text x="616" y="517" class="axis" text-anchor="middle">8</text><text x="745" y="517" class="axis" text-anchor="middle">10</text><text x="874" y="517" class="axis" text-anchor="middle">12</text><text x="1003" y="517" class="axis" text-anchor="middle">14</text><text x="1132" y="517" class="axis" text-anchor="middle">16</text>
+  <text x="100" y="517" class="axis" text-anchor="middle">0</text>
+  <text x="616" y="539" class="axis" text-anchor="middle">candidate attempt · grouped by round</text>
+
+  <rect x="40" y="580" width="710" height="166" rx="18" fill="#0d1728" stroke="#32d583" stroke-opacity=".8"/>
+  <circle cx="72" cy="618" r="10" fill="#32d583"/>
+  <text x="96" y="625" class="metric">Holdout verified the winner</text>
+  <text x="64" y="657" class="body">The promoted patch cleared development selection and the private holdout.</text>
+  <text x="64" y="690" class="label" fill="#8b98ad">PRIVATE HOLDOUT</text>
+  <text x="214" y="690" class="metric" fill="#32d583">PROMOTED</text>
+  <text x="64" y="718" class="muted">baseline -0.665 → candidate -0.175</text>
+
+  <rect x="774" y="580" width="386" height="166" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="798" y="614" class="label" fill="#8b98ad">BASELINE → DEV WINNER</text>
+  <text x="798" y="647" class="metric">-0.564 → -0.125</text>
+  <text x="798" y="678" class="label" fill="#8b98ad">SOURCE</text>
+  <text x="868" y="678" class="metric">NO — PATCH SAVED</text>
+  <text x="798" y="709" class="muted">16 candidates · 1 kept · 15 rejected</text>
+  <text x="798" y="731" class="muted">2390195 tokens · 436.231s · 1 rounds</text>
+  <text x="40" y="796" class="muted">experiment expA · 2026-08-24T21:52:53.854Z · machine receipt: receipt.json</text>
+</svg>

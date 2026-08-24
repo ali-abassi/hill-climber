@@ -193,11 +193,22 @@ success rate.
 |---|---|---|---|
 | [`duration`](benchmarks/duration) | Correctness | 4/12 → 12/12 cases | 12/12 |
 | [`latency`](benchmarks/latency) | Wall time | 5.851s → 0.000769s (7,611×) | 8,342× on a larger, differently-seeded workload |
+| [`iteration`](benchmarks/iteration) | Whether rounds help | one-shot 3.97× vs multi-round 4.26× at equal budget | both promoted independently |
 
 The `latency` benchmark holds correctness as a hard gate, so a faster function
 that changes behaviour scores `-1e9` rather than winning. All five of its
 candidates passed that gate, making the ranking a real choice among working
 implementations.
+
+The [`iteration`](benchmarks/iteration) experiment is the one that tests the
+premise this project is named after. At an identical 16-candidate budget,
+iterating (`4 × 4 rounds`) produced a promoted patch **6.8% faster** than
+searching in parallel (`16 × 1 round`) — Mann-Whitney, n=25 per arm,
+p=0.000003. It cost **71% more tokens** to get there, and **rounds 3 and 4
+found nothing at all**, so on that task `--rounds 2` was the efficient setting.
+Iteration is real; it is not free, and its returns fall off a cliff. Both arms
+also beat a hand-optimized reference, by noticing an optimization its author
+had missed.
 
 The correctness benchmark below repairs an incomplete compound-duration parser
 without editing its evaluator.

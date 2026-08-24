@@ -1,0 +1,46 @@
+diff --git a/textstats.py b/textstats.py
+index 59158e7..258787a 100644
+--- a/textstats.py
++++ b/textstats.py
+@@ -16,26 +16,20 @@ VOWELS = "aeiou"
+ def summarize(records: list[dict]) -> tuple[int, int, int]:
+     total_vowels = 0
+     total_words = 0
+-    initials = ""
++    initials_len = 0
+ 
+     for record in records:
+-        words = record["text"].lower().split()
+-        first = record["text"].lower()[:1]
+-        vowel_source = record["text"].lower()
+-
+-        count = 0
+-        for character in vowel_source:
+-            if character in VOWELS:
+-                count += 1
+-        total_vowels += count
+-
+-        rejoined = " ".join(words).split()
+-        total_words += len(rejoined)
+-
+-        accumulated = ""
+-        for word in rejoined:
+-            accumulated += word[0]
+-
+-        initials += first + accumulated[:1]
+-
+-    return total_vowels, total_words, len(initials)
++        text = record["text"].lower()
++        words = text.split()
++
++        total_vowels += (
++            text.count("a")
++            + text.count("e")
++            + text.count("i")
++            + text.count("o")
++            + text.count("u")
++        )
++        total_words += len(words)
++        initials_len += bool(text) + bool(words)
++
++    return total_vowels, total_words, initials_len

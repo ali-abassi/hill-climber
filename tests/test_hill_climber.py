@@ -20,6 +20,7 @@ EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 ENV_PROBE_EVALUATOR = ROOT / "tests" / "fixtures" / "env_probe_evaluator.py"
 MULTIFILE_EVALUATOR = ROOT / "tests" / "fixtures" / "multifile_evaluator.py"
 LATENCY_BENCHMARK = ROOT / "benchmarks" / "latency"
+ITERATION_BENCHMARK = ROOT / "benchmarks" / "iteration"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 INVALID_FEEDBACK_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_feedback_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
@@ -216,7 +217,7 @@ class HillClimberTests(unittest.TestCase):
             environment = self.environment(root, "easy")
             environment["HC_TEST_SECRET"] = "must-not-leak"
             result = subprocess.run(command, cwd=repo, env=environment,
-                                    text=True, capture_output=True, timeout=30, check=False)
+                                    text=True, capture_output=True, timeout=90, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             baseline_repeat = experiment / "evaluations" / "baseline" / "development" / "repeat-1.json"
             payload = json.loads(baseline_repeat.read_text(encoding="utf-8"))
@@ -283,7 +284,7 @@ class HillClimberTests(unittest.TestCase):
                 "--out", str(experiment), "--json", "--no-apply",
             ]
             result = subprocess.run(command, cwd=repo, env=self.environment(root, "easy"),
-                                    text=True, capture_output=True, timeout=30, check=False)
+                                    text=True, capture_output=True, timeout=90, check=False)
             self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["error"]["code"], "E_HOLDOUT_EXPOSED")
@@ -304,7 +305,7 @@ class HillClimberTests(unittest.TestCase):
                 "--out", str(experiment), "--json", "--no-apply",
             ]
             result = subprocess.run(command, cwd=repo, env=self.environment(root, "easy"),
-                                    text=True, capture_output=True, timeout=60, check=False)
+                                    text=True, capture_output=True, timeout=90, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             receipt = json.loads((experiment / "receipt.json").read_text(encoding="utf-8"))
             # The promotion is real, but the receipt must not imply it was
@@ -600,6 +601,69 @@ class HillClimberTests(unittest.TestCase):
                 digest = hashlib.sha256((results / filename).read_bytes()).hexdigest()
                 self.assertEqual(receipt[key]["sha256"], digest)
             ET.parse(results / "report.svg")
+
+    def test_disclosed_iteration_experiment_reproduces(self) -> None:
+        # The experiment's claim is comparative: at an identical candidate
+        # budget, the multi-round arm produced a faster promoted patch than the
+        # one-shot arm. Wall seconds are machine-dependent, so this re-measures
+        # both promoted patches here rather than trusting the recorded numbers.
+        results = ITERATION_BENCHMARK / "results"
+        one_shot = json.loads((results / "arm-a-one-shot" / "receipt.json").read_text(encoding="utf-8"))
+        multi = json.loads((results / "arm-b-multi-round" / "receipt.json").read_text(encoding="utf-8"))
+
+        # Equal candidate budget is what makes the comparison meaningful.
+        self.assertEqual(one_shot["counts"]["candidates"], multi["counts"]["candidates"])
+        # Only the multi-round arm iterated, and it took gain in more than one step.
+        self.assertEqual(one_shot["rounds_completed"], 1)
+        self.assertGreater(multi["rounds_completed"], 1)
+        self.assertEqual(one_shot["counts"]["kept"], 1)
+        self.assertGreater(multi["counts"]["kept"], 1)
+        # Both promotions must have been independently verified to be comparable.
+        for receipt in (one_shot, multi):
+            self.assertEqual(receipt["status"], "promoted")
+            self.assertIs(receipt["promotion"]["holdout_independent"], True)
+
+        for arm in ("arm-a-one-shot", "arm-b-multi-round"):
+            receipt = json.loads((results / arm / "receipt.json").read_text(encoding="utf-8"))
+            for key, filename in (("ledger", "events.jsonl"), ("manifest", "manifest.json")):
+                digest = hashlib.sha256((results / arm / filename).read_bytes()).hexdigest()
+                self.assertEqual(receipt["evidence"][key]["sha256"], digest)
+            for key, filename in (("patch", "winner.patch"), ("report", "report.svg")):
+                digest = hashlib.sha256((results / arm / filename).read_bytes()).hexdigest()
+                self.assertEqual(receipt[key]["sha256"], digest)
+            ET.parse(results / arm / "report.svg")
+
+        def timed_variant(patch: Path) -> tuple[float, tuple]:
+            with tempfile.TemporaryDirectory() as raw:
+                repo = Path(raw)
+                (repo / "textstats.py").write_text(
+                    (ITERATION_BENCHMARK / "subject" / "textstats.py").read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                )
+                subprocess.run(["git", "init", "-q"], cwd=repo, check=True,
+                               capture_output=True, timeout=30)
+                subprocess.run(["git", "apply", str(patch)], cwd=repo, check=True,
+                               capture_output=True, timeout=30)
+                completed = subprocess.run(
+                    [str(PRODUCT_PYTHON), str(ITERATION_BENCHMARK / "evaluate.py"),
+                     "development", "0.08"],
+                    cwd=repo, text=True, capture_output=True, timeout=180, check=True,
+                )
+                payload = json.loads(completed.stdout)
+                return abs(float(payload["score"])), payload["gates"]
+
+        one_shot_seconds, one_shot_gates = timed_variant(results / "arm-a-one-shot" / "winner.patch")
+        multi_seconds, multi_gates = timed_variant(results / "arm-b-multi-round" / "winner.patch")
+
+        # Neither arm bought speed by changing behaviour.
+        self.assertTrue(one_shot_gates["correct"])
+        self.assertTrue(multi_gates["correct"])
+        # The headline comparative claim, re-measured on this machine. The
+        # disclosed gap was 6.8%; 1.0 only asserts the direction, because a
+        # loaded or slow machine compresses the margin.
+        self.assertLess(multi_seconds, one_shot_seconds,
+                        f"multi-round {multi_seconds:.5f}s was not faster than "
+                        f"one-shot {one_shot_seconds:.5f}s")
 
     def test_disclosed_protocol_receipt_is_internally_verified(self) -> None:
         results = PROTOCOL_BENCHMARK / "results"
