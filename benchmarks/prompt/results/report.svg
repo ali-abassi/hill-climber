@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+  <title id="title">Hill Climber result: promoted</title>
+  <desc id="desc">A multi-round hill climb showing every candidate, rejected routes, verified incumbent steps, private holdout verdict, usage, and application state.</desc>
+  <style>
+    text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .eyebrow { fill: #32d583; font-size: 13px; font-weight: 800; letter-spacing: 2.2px; }
+    .title { fill: #f7f9fc; font-size: 34px; font-weight: 760; }
+    .task { fill: #aab4c5; font-size: 15px; }
+    .label { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; }
+    .muted { fill: #8b98ad; font-size: 12px; }
+    .score { fill: #f7f9fc; font-size: 32px; font-weight: 760; }
+    .body { fill: #c6cfdd; font-size: 15px; }
+    .metric { fill: #f7f9fc; font-size: 17px; font-weight: 700; }
+    .axis { fill: #718096; font-size: 11px; }
+    .round { fill: #5f718c; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; }
+    .grid { stroke: #26344c; stroke-width: 1; stroke-dasharray: 3 5; }
+    .route { fill: none; }
+    .route-rejected { stroke: #66758d; stroke-width: 1.25; stroke-dasharray: 4 4; stroke-opacity: .48; }
+    .route-kept { stroke: #32d583; stroke-width: 2; stroke-opacity: .72; }
+    .selected { fill: #32d583; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
+  </style>
+  <rect width="1200" height="820" rx="24" fill="#081120"/>
+  <path d="M0 0h1200v6H0z" fill="#32d583"/>
+  <text x="40" y="48" class="eyebrow">HILL CLIMBER · VERIFIED RUN REPORT</text>
+  <text x="40" y="92" class="title">2 rounds. 2 verified climbs.</text>
+  <rect x="1016" y="35" width="144" height="42" rx="21" fill="#32d583" fill-opacity=".13" stroke="#32d583"/>
+  <text x="1088" y="61" class="label" fill="#32d583" text-anchor="middle">PROMOTED</text>
+  <text x="40" y="124" class="task">Improve prompt.md so it routes Acme support tickets accurately</text>
+
+  <rect x="40" y="154" width="1120" height="402" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="64" y="188" class="label" fill="#8b98ad">VERIFIED HILL-CLIMB TRAJECTORY</text>
+  <line x1="786" y1="184" x2="818" y2="184" stroke="#32d583" stroke-width="4"/>
+  <text x="826" y="188" class="axis">best verified</text>
+  <circle cx="966" cy="184" r="5" fill="#66758d"/>
+  <text x="978" y="188" class="axis">rejected</text>
+  <circle cx="1054" cy="184" r="6" fill="#32d583"/>
+  <text x="1066" y="188" class="axis">kept</text>
+  <rect x="100" y="228" width="567.6" height="264" fill="#111f34" fill-opacity=".52"/>
+      <text x="383.8" y="246" class="round" text-anchor="middle">ROUND 1</text>
+<rect x="667.6" y="228" width="464.4" height="264" fill="#0b1526" fill-opacity=".52"/>
+      <text x="899.8" y="246" class="round" text-anchor="middle">ROUND 2</text>
+  <line x1="100" y1="492" x2="1132" y2="492" class="grid"/>
+    <text x="86" y="496" class="axis" text-anchor="end">0.564</text>
+<line x1="100" y1="426" x2="1132" y2="426" class="grid"/>
+    <text x="86" y="430" class="axis" text-anchor="end">0.685</text>
+<line x1="100" y1="360" x2="1132" y2="360" class="grid"/>
+    <text x="86" y="364" class="axis" text-anchor="end">0.806</text>
+<line x1="100" y1="294" x2="1132" y2="294" class="grid"/>
+    <text x="86" y="298" class="axis" text-anchor="end">0.926</text>
+<line x1="100" y1="228" x2="1132" y2="228" class="grid"/>
+    <text x="86" y="232" class="axis" text-anchor="end">1.047</text>
+  <path d="M 100 466.4516129032258 H 203.2 H 306.4 H 409.6 H 512.8 H 616 V 359.99999999999994 H 719.2 H 822.4 H 925.6 H 1028.8 H 1132 V 253.54838709677418 L 1132 492 L 100 492 Z" fill="#32d583" fill-opacity=".07"/>
+  <line data-candidate="r01-c01" class="route route-rejected" x1="100" y1="466.4516129032258" x2="203.2" y2="380.2764976958526"/>
+<line data-candidate="r01-c02" class="route route-rejected" x1="100" y1="466.4516129032258" x2="306.4" y2="359.99999999999994"/>
+<line data-candidate="r01-c03" class="route route-rejected" x1="100" y1="466.4516129032258" x2="409.6" y2="365.06912442396316"/>
+<line data-candidate="r01-c04" class="route route-rejected" x1="100" y1="466.4516129032258" x2="512.8" y2="375.2073732718894"/>
+<line data-candidate="r01-c05" class="route route-kept" x1="100" y1="466.4516129032258" x2="616" y2="359.99999999999994"/>
+<line data-candidate="r02-c01" class="route route-rejected" x1="616" y1="359.99999999999994" x2="719.2" y2="283.9631336405531"/>
+<line data-candidate="r02-c02" class="route route-rejected" x1="616" y1="359.99999999999994" x2="822.4" y2="283.9631336405531"/>
+<line data-candidate="r02-c03" class="route route-rejected" x1="616" y1="359.99999999999994" x2="925.6" y2="263.68663594470047"/>
+<line data-candidate="r02-c04" class="route route-kept" x1="616" y1="359.99999999999994" x2="1028.8" y2="253.54838709677418"/>
+<line data-candidate="r02-c05" class="route route-rejected" x1="616" y1="359.99999999999994" x2="1132" y2="283.9631336405531"/>
+  <path d="M 100 466.4516129032258 H 203.2 H 306.4 H 409.6 H 512.8 H 616 V 359.99999999999994 H 719.2 H 822.4 H 925.6 H 1028.8 H 1132 V 253.54838709677418" fill="none" stroke="#32d583" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="100" cy="466.4516129032258" r="6" fill="#58a6ff" stroke="#081120" stroke-width="2"/>
+  <circle cx="203.2" cy="380.2764976958526" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="306.4" cy="359.99999999999994" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="409.6" cy="365.06912442396316" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="512.8" cy="375.2073732718894" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="616" cy="359.99999999999994" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 616 350.99999999999994V 342.99999999999994" stroke="#32d583" stroke-width="1"/>
+      <text x="616" y="337.99999999999994" class="selected" text-anchor="middle">KEPT · r01-c05 · 0.806</text>
+<circle cx="719.2" cy="283.9631336405531" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="822.4" cy="283.9631336405531" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="925.6" cy="263.68663594470047" r="5" fill="#f5b942" stroke="#081120" stroke-width="2"/>
+<circle cx="1028.8" cy="253.54838709677418" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 1028.8 262.54838709677415V 275.54838709677415" stroke="#32d583" stroke-width="1"/>
+      <text x="1124" y="287.54838709677415" class="selected" text-anchor="end">DEV WINNER · r02-c04 · 1</text>
+<circle cx="1132" cy="283.9631336405531" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+  <text x="203.2" y="517" class="axis" text-anchor="middle">1</text><text x="306.4" y="517" class="axis" text-anchor="middle">2</text><text x="409.6" y="517" class="axis" text-anchor="middle">3</text><text x="512.8" y="517" class="axis" text-anchor="middle">4</text><text x="616" y="517" class="axis" text-anchor="middle">5</text><text x="719.2" y="517" class="axis" text-anchor="middle">6</text><text x="822.4" y="517" class="axis" text-anchor="middle">7</text><text x="925.6" y="517" class="axis" text-anchor="middle">8</text><text x="1028.8" y="517" class="axis" text-anchor="middle">9</text><text x="1132" y="517" class="axis" text-anchor="middle">10</text>
+  <text x="100" y="517" class="axis" text-anchor="middle">0</text>
+  <text x="616" y="539" class="axis" text-anchor="middle">candidate attempt · grouped by round</text>
+
+  <rect x="40" y="580" width="710" height="166" rx="18" fill="#0d1728" stroke="#32d583" stroke-opacity=".8"/>
+  <circle cx="72" cy="618" r="10" fill="#32d583"/>
+  <text x="96" y="625" class="metric">Holdout verified the winner</text>
+  <text x="64" y="657" class="body">The promoted patch cleared development selection and the private holdout.</text>
+  <text x="64" y="690" class="label" fill="#8b98ad">PRIVATE HOLDOUT</text>
+  <text x="214" y="690" class="metric" fill="#32d583">PROMOTED</text>
+  <text x="64" y="718" class="muted">baseline 0.704 → candidate 1</text>
+
+  <rect x="774" y="580" width="386" height="166" rx="18" fill="#0d1728" stroke="#26344c"/>
+  <text x="798" y="614" class="label" fill="#8b98ad">BASELINE → DEV WINNER</text>
+  <text x="798" y="647" class="metric">0.611 → 1</text>
+  <text x="798" y="678" class="label" fill="#8b98ad">SOURCE</text>
+  <text x="868" y="678" class="metric">NO — PATCH SAVED</text>
+  <text x="798" y="709" class="muted">10 candidates · 2 kept · 8 rejected</text>
+  <text x="798" y="731" class="muted">1133640 tokens · 902.471s · 2 rounds</text>
+  <text x="40" y="796" class="muted">experiment experiment · 2026-08-24T23:25:26.582Z · machine receipt: receipt.json</text>
+</svg>

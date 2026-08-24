@@ -18,22 +18,30 @@ _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def parse_env_pairs(pairs: list[str]) -> dict[str, str]:
-    """Parse repeatable `--env KEY=VAL` flags into a flat dict.
+    """Resolve repeatable `--env KEY` or `--env KEY=VAL` flags in memory.
 
-    Empty values are allowed (the var is just unset for that evaluator).
-    Names must be POSIX-style identifiers; values are taken literally.
+    KEY inherits its value from the caller's environment, keeping secrets out
+    of argv. KEY=VAL is convenient for non-secret literals. Only names are
+    persisted in the experiment manifest; values exist in the controller
+    process environment for this invocation and nowhere in durable evidence.
     """
     out: dict[str, str] = {}
     for raw in pairs or []:
-        if "=" not in raw:
-            raise SystemExit(
-                f"hill-climber: --env expects KEY=VAL (got {raw!r})"
-            )
-        key, _, value = raw.partition("=")
+        key, separator, value = raw.partition("=")
         if not _ENV_KEY_RE.match(key):
             raise SystemExit(
                 f"hill-climber: --env key {key!r} is not a valid POSIX identifier"
             )
+        if key.startswith("HILL_CLIMBER_"):
+            raise SystemExit(
+                f"hill-climber: --env cannot override reserved key {key!r}"
+            )
+        if not separator:
+            if key not in os.environ:
+                raise SystemExit(
+                    f"hill-climber: --env {key!r} is not set in the caller environment"
+                )
+            value = os.environ[key]
         out[key] = value
     return out
 
@@ -80,10 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--holdout-eval", required=True, help="private holdout evaluator argv string")
     run.add_argument("--setup", help="optional dependency setup argv string for isolated worktrees")
     run.add_argument("--env", action="append", default=[],
-                     metavar="KEY=VAL",
-                     help="extra environment variable exposed to setup, evaluator, "
-                          "and holdout-evaluator commands (repeat as needed); only "
-                          "additive, never inherits the parent shell")
+                     metavar="KEY[=VAL]",
+                     help="extra variable exposed to setup/evaluators; KEY inherits "
+                          "from the shell, KEY=VAL sets a literal; values are never "
+                          "persisted (repeat as needed)")
     run.add_argument("--mutable", action="append", required=True,
                      help="allowed repository-relative glob; repeat as needed")
     run.add_argument("--candidates", type=bounded_int(1, 20), default=5, metavar="N",
@@ -119,6 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         node = commands.add_parser(name, help=help_text)
         add_common(node, experiment=True)
+        if name == "resume":
+            node.add_argument("--env", action="append", default=[], metavar="KEY[=VAL]",
+                              help="rehydrate evaluator variables; values are never persisted")
     inspect = commands.add_parser("inspect", help="inspect a receipt or candidate trace")
     add_common(inspect, experiment=True)
     inspect.add_argument("--candidate", help="candidate id such as r01-c03")
@@ -154,7 +165,6 @@ def request_from(args: argparse.Namespace) -> dict[str, object]:
         "eval_argv": shlex.split(args.eval),
         "holdout_argv": shlex.split(args.holdout_eval),
         "setup_argv": shlex.split(args.setup) if args.setup else [],
-        "env": parse_env_pairs(args.env),
         "mutable": args.mutable,
         "candidates": args.candidates,
         "rounds": args.rounds,
@@ -184,13 +194,18 @@ def main() -> int:
         print(f"error: controller is missing: {CONTROLLER}", file=sys.stderr)
         return 2
     try:
+        env_values = parse_env_pairs(getattr(args, "env", []))
         request = request_from(args)
+        if args.action in ("run", "resume"):
+            request["env_keys"] = sorted(env_values)
+        controller_env = os.environ.copy()
+        controller_env.update(env_values)
         result = subprocess.run(
             ["node", str(CONTROLLER)],
             input=json.dumps(request),
             text=True,
             cwd=Path.cwd(),
-            env=os.environ.copy(),
+            env=controller_env,
             check=False,
         )
         return result.returncode

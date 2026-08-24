@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Added `benchmarks/prompt`, the first disclosed non-code climb. The mutable
+  artifact is a Markdown routing prompt; a pinned DeepSeek Flash evaluator with
+  medium reasoning and host-enforced structured output scores exact queue
+  accuracy over private labeled examples. Two real Codex rounds improved
+  development accuracy from 0.611 to 1.000 and independent holdout accuracy
+  from 0.704 to 1.000, then stopped on `target_achieved`. Two earlier evaluator
+  designs were rejected rather than
+  published: one measured output formatting instead of semantics, and one was
+  too sparse around a `$50` policy boundary, allowing a wrong `$100` policy to
+  score 0.933. The hardened evaluator adds dense boundary and prompt-injection
+  coverage; the wrong policy then falls to 0.833 while the true policy remains
+  1.000. Reasoning level was measured rather than assumed: medium reached
+  1.000 with zero observed variance, versus 0.967 for non-reasoning inference.
+- Repositioned the project around measurable file-backed artifacts rather than
+  code alone. Code, prompts, designs, configs, and other artifacts use the same
+  isolated-candidate, external-score, private-holdout contract.
 - Added `benchmarks/iteration`, a disclosed controlled experiment on whether
   rounds actually help. Every previous disclosed run was single-round, and the
   only multi-round evidence used a deterministic generator, so the premise the
@@ -29,13 +45,15 @@
   is still refused. Previously every test and benchmark was single-file.
 - Documented that evaluator output written into the workspace makes it dirty and
   stops the next run with `E_DIRTY`.
-- Added `--env KEY=VAL` (repeatable) so setup, evaluator, and holdout-evaluator
-  commands can receive exactly the extra environment variables they need.
-  Still additive on top of the fixed sanitized environment; the parent
-  shell's other variables never reach evaluators or candidate worktrees.
-  Found via a 9-task live-repo test pass (real Codex-generated candidates,
-  verified holdout speedups from 1.1x to 230x) that hit `KeyError` in an
-  evaluator relying on an inherited env var.
+- Added repeatable `--env KEY` / `--env KEY=VAL` so setup, evaluator, and
+  holdout-evaluator commands can receive exactly the extra variables they need.
+  `KEY` inherits from the caller without placing its value in argv; durable
+  manifests store names only, never values; resume rehydrates from the current
+  environment. Reserved `HILL_CLIMBER_*` keys cannot be overridden, and
+  candidate shells still receive only the fixed sanitized environment. This
+  replaces an initial implementation that incorrectly persisted literal env
+  values in `manifest.json`; the flaw was caught before any secret-bearing
+  artifact was committed or pushed.
 
 ## 0.4.0 — 2026-08-24
 

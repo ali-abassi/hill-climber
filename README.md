@@ -1,9 +1,9 @@
 <div align="center">
   <img src="assets/logo.png" width="144" alt="Hill Climber: a human rock climber reaching upward on a steep rock face">
 
-  <h1>Turn code changes into measured experiments.</h1>
+  <h1>Turn any measurable artifact into a controlled improvement experiment.</h1>
 
-  <p><strong>Hill Climber gives Codex a measurable repository goal, runs competing patches in isolated Git worktrees, plots every score, verifies the best strict gain on unseen cases, and applies only a promoted patch.</strong></p>
+  <p><strong>Hill Climber gives Codex a measurable file-backed goal, runs competing versions in isolated Git worktrees, plots every score, verifies the best strict gain on unseen cases, and applies only a promoted patch.</strong></p>
 
   <p>
     <a href="https://github.com/ali-abassi/hill-climber/actions/workflows/test.yml"><img src="https://github.com/ali-abassi/hill-climber/actions/workflows/test.yml/badge.svg?branch=trunk" alt="Tests"></a>
@@ -27,7 +27,7 @@
 
 ## Why does this exist?
 
-“Make this code better” is not an evaluation method. Autonomous coding loops
+“Make this better” is not an evaluation method. Autonomous improvement loops
 often blur roles that should stay separate:
 
 - the same agent proposes a change and declares it better;
@@ -194,6 +194,7 @@ success rate.
 | [`duration`](benchmarks/duration) | Correctness | 4/12 → 12/12 cases | 12/12 |
 | [`latency`](benchmarks/latency) | Wall time | 5.851s → 0.000769s (7,611×) | 8,342× on a larger, differently-seeded workload |
 | [`iteration`](benchmarks/iteration) | Whether rounds help | one-shot 3.97× vs multi-round 4.26× at equal budget | both promoted independently |
+| [`prompt`](benchmarks/prompt) | Non-code policy prompt | 0.611 → 1.000 exact accuracy | 0.704 → 1.000 on 36 unseen tickets |
 
 The `latency` benchmark holds correctness as a hard gate, so a faster function
 that changes behaviour scores `-1e9` rather than winning. All five of its
@@ -243,7 +244,7 @@ and the complete experiment was rerun from the untouched baseline.
 | You want to… | Run |
 |---|---|
 | Start a bounded search | `hill-climber run …` |
-| Pass an evaluator-only env var | `hill-climber run … --env LOG_LEVEL=debug` (repeatable) |
+| Pass an evaluator-only env var | `hill-climber run … --env API_KEY` (inherit) or `--env LOG_LEVEL=debug` (literal) |
 | Verify current state | `hill-climber status EXPERIMENT --json` |
 | Read the receipt | `hill-climber inspect EXPERIMENT --json` |
 | View the score trajectory | Open `EXPERIMENT/report.svg` in a browser |
@@ -271,7 +272,7 @@ not been certified.
 
 | Choose | When it wins | Tradeoff |
 |---|---|---|
-| **Hill Climber** | You have a measurable code objective, narrow mutable files, and a private regression set | Requires thoughtful evaluators; five candidates consume more subscription capacity |
+| **Hill Climber** | You have any measurable file-backed artifact, narrow mutable files, and a private regression set | Requires thoughtful evaluators; five candidates consume more subscription capacity |
 | **Manual Codex** | The task is exploratory, subjective, or needs constant human steering | Human owns comparison, rollback, and experiment memory |
 | **[AutoAgent](https://github.com/thirdlayerinc/autoagent)** | You are optimizing an agent harness against Harbor tasks and want a Docker-based sequential overnight loop | More specialized benchmark/task setup; its public graph is excellent experiment communication |
 | **[autoresearch](https://github.com/karpathy/autoresearch)** | You are optimizing one training program under a fixed GPU-time metric | Deliberately narrow and elegant; the prompt owns most loop discipline |
@@ -301,9 +302,10 @@ promotion. See the complete [LLM-judged visual climb protocol](docs/llm-judged-v
 - durable prompts, SDK traces, patches, evaluator records, failures, receipt,
   and a graphical SVG run report;
 - environment allowlisting for cached subscription auth without forwarding
-  arbitrary caller secrets, plus opt-in `--env KEY=VAL` (repeatable) so
-  setup/evaluator/holdout-evaluator commands can request exactly the extra
-  variables they need;
+  arbitrary caller secrets, plus repeatable `--env KEY` (inherit) or
+  `--env KEY=VAL` (literal) so setup/evaluator/holdout-evaluator commands can
+  request exactly the extra variables they need. Durable state stores names
+  only, never values;
 - no controller-owned commit to your branch, push, merge, deployment, or
   destructive reset.
 
@@ -324,10 +326,11 @@ The committed deterministic suite covers:
 - distinct dirty-tree, authentication, SDK, and evaluator failures;
 - manifest, state, and ledger tamper rejection.
 
-The disclosed real-Codex smoke benchmark adds a full receipt, ledger, patch, and
-score graph for one code task. Public CI runs all ten tests plus
-syntax checks and a production dependency audit. Together these validate the
-controller protocol and one observed improvement; they do **not** establish a
+The disclosed real-Codex benchmarks add full receipts, ledgers, patches, and
+score graphs for correctness, latency, iteration, and a non-code policy prompt.
+Public CI runs all seventeen tests plus syntax checks and a production
+dependency audit. Together these validate the controller protocol and four
+observed improvements; they do **not** establish a
 general success rate or superiority over AutoAgent, autoresearch, manual Codex,
 or any other system.
 

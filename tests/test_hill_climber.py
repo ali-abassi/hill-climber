@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 import os
 import shlex
 import subprocess
@@ -21,6 +22,7 @@ ENV_PROBE_EVALUATOR = ROOT / "tests" / "fixtures" / "env_probe_evaluator.py"
 MULTIFILE_EVALUATOR = ROOT / "tests" / "fixtures" / "multifile_evaluator.py"
 LATENCY_BENCHMARK = ROOT / "benchmarks" / "latency"
 ITERATION_BENCHMARK = ROOT / "benchmarks" / "iteration"
+PROMPT_BENCHMARK = ROOT / "benchmarks" / "prompt"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 INVALID_FEEDBACK_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_feedback_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
@@ -211,10 +213,11 @@ class HillClimberTests(unittest.TestCase):
             command = [
                 str(PRODUCT_PYTHON), str(CLI), "run", "--workspace", str(repo),
                 "--task", "noop", "--eval", evaluator, "--holdout-eval", evaluator,
-                "--env", "HC_TEST_PROBE=reached", "--mutable", "solution.txt",
+                "--env", "HC_TEST_PROBE", "--mutable", "solution.txt",
                 "--candidates", "1", "--out", str(experiment), "--json", "--no-apply",
             ]
             environment = self.environment(root, "easy")
+            environment["HC_TEST_PROBE"] = "reached"
             environment["HC_TEST_SECRET"] = "must-not-leak"
             result = subprocess.run(command, cwd=repo, env=environment,
                                     text=True, capture_output=True, timeout=90, check=False)
@@ -222,6 +225,27 @@ class HillClimberTests(unittest.TestCase):
             baseline_repeat = experiment / "evaluations" / "baseline" / "development" / "repeat-1.json"
             payload = json.loads(baseline_repeat.read_text(encoding="utf-8"))
             self.assertEqual(payload["details"], "probe=reached secret=MISSING")
+
+            # Durable evidence records only the requested variable name. The
+            # value reaches the evaluator process but never the manifest.
+            manifest = json.loads((experiment / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["config"]["extra_env_keys"], ["HC_TEST_PROBE"])
+            self.assertNotIn("extra_env", manifest["config"])
+            manifest_text = (experiment / "manifest.json").read_text(encoding="utf-8")
+            self.assertNotIn("reached", manifest_text)
+            self.assertNotIn("must-not-leak", manifest_text)
+
+            # A completed experiment can replay its receipt without the value,
+            # because no evaluator runs. Unfinished resume rehydration is
+            # exercised in test_resume_finishes_only_missing_work... below.
+            replay_environment = dict(environment)
+            replay_environment.pop("HC_TEST_PROBE")
+            replay = subprocess.run(
+                [str(PRODUCT_PYTHON), str(CLI), "resume", str(experiment), "--json"],
+                cwd=repo, env=replay_environment, text=True, capture_output=True,
+                timeout=90, check=False,
+            )
+            self.assertEqual(replay.returncode, 0, replay.stdout + replay.stderr)
 
     def test_multi_file_candidate_is_promoted_as_one_unit_and_boundary_still_holds(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -345,9 +369,11 @@ class HillClimberTests(unittest.TestCase):
                 str(PRODUCT_PYTHON), str(CLI), "run", "--workspace", str(repo),
                 "--task", "Improve the easy fixture score", "--eval", evaluator,
                 "--holdout-eval", holdout, "--mutable", "solution.txt", "--candidates", "5",
-                "--generation-parallel", "1", "--out", str(experiment), "--json",
+                "--env", "HC_TEST_PROBE", "--generation-parallel", "1",
+                "--out", str(experiment), "--json",
             ]
             environment = self.environment(root, "easy")
+            environment["HC_TEST_PROBE"] = "resume-value"
             environment["HILL_CLIMBER_FAKE_DELAY_MS"] = "10000"
             process = subprocess.Popen(command, cwd=repo, env=environment, text=True,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -371,9 +397,21 @@ class HillClimberTests(unittest.TestCase):
             self.assertEqual(process.returncode, 130, stdout + stderr)
 
             (experiment / "stop.request").unlink()
-            resumed = subprocess.run(
+
+            missing = subprocess.run(
                 [str(PRODUCT_PYTHON), str(CLI), "resume", str(experiment), "--json"],
                 cwd=repo, env=self.environment(root, "easy"), text=True,
+                capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(missing.returncode, 2, missing.stdout + missing.stderr)
+            self.assertEqual(json.loads(missing.stdout)["error"]["code"], "E_ENV")
+
+            resume_environment = self.environment(root, "easy")
+            resume_environment["HC_TEST_PROBE"] = "resume-value"
+            resumed = subprocess.run(
+                [str(PRODUCT_PYTHON), str(CLI), "resume", str(experiment),
+                 "--env", "HC_TEST_PROBE", "--json"],
+                cwd=repo, env=resume_environment, text=True,
                 capture_output=True, timeout=90, check=False,
             )
             self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
@@ -664,6 +702,56 @@ class HillClimberTests(unittest.TestCase):
         self.assertLess(multi_seconds, one_shot_seconds,
                         f"multi-round {multi_seconds:.5f}s was not faster than "
                         f"one-shot {one_shot_seconds:.5f}s")
+
+    def test_disclosed_prompt_benchmark_receipt_is_independent_and_iterative(self) -> None:
+        results = PROMPT_BENCHMARK / "results"
+        receipt = json.loads((results / "receipt.json").read_text(encoding="utf-8"))
+
+        # This benchmark exists to prove a non-code artifact improves through
+        # real iteration, not merely that a file named prompt.md was emitted.
+        self.assertEqual(receipt["status"], "promoted")
+        self.assertEqual(receipt["rounds_completed"], 2)
+        self.assertEqual(receipt["counts"]["kept"], 2)
+        self.assertEqual(receipt["counts"]["invalid"], 0)
+        self.assertEqual(receipt["counts"]["crashed"], 0)
+        self.assertGreater(receipt["incumbent"]["score"], receipt["baseline"]["score"])
+        self.assertGreater(receipt["promotion"]["candidate"]["score"],
+                           receipt["promotion"]["baseline"]["score"])
+        self.assertIs(receipt["promotion"]["holdout_independent"], True)
+
+        # Development and holdout are genuinely different examples with the
+        # same mechanically-generated label distribution.
+        dev = json.loads((PROMPT_BENCHMARK / "data" / "dev.json").read_text(encoding="utf-8"))
+        holdout = json.loads((PROMPT_BENCHMARK / "data" / "holdout.json").read_text(encoding="utf-8"))
+        self.assertFalse({item["message"] for item in dev} &
+                         {item["message"] for item in holdout})
+        self.assertEqual(Counter(item["label"] for item in dev),
+                         Counter(item["label"] for item in holdout))
+
+        # Committed evidence is self-authenticating and the patch applies to
+        # the exact frozen non-code baseline.
+        for key, filename in (("ledger", "events.jsonl"), ("manifest", "manifest.json")):
+            digest = hashlib.sha256((results / filename).read_bytes()).hexdigest()
+            self.assertEqual(receipt["evidence"][key]["sha256"], digest)
+        for key, filename in (("patch", "winner.patch"), ("report", "report.svg")):
+            digest = hashlib.sha256((results / filename).read_bytes()).hexdigest()
+            self.assertEqual(receipt[key]["sha256"], digest)
+        ET.parse(results / "report.svg")
+
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw)
+            (repo / "prompt.md").write_text(
+                (PROMPT_BENCHMARK / "subject" / "prompt.md").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True,
+                           capture_output=True, timeout=30)
+            subprocess.run(["git", "apply", str(results / "winner.patch")],
+                           cwd=repo, check=True, capture_output=True, timeout=30)
+            self.assertNotEqual(
+                (repo / "prompt.md").read_text(encoding="utf-8"),
+                (PROMPT_BENCHMARK / "subject" / "prompt.md").read_text(encoding="utf-8"),
+            )
 
     def test_disclosed_protocol_receipt_is_internally_verified(self) -> None:
         results = PROTOCOL_BENCHMARK / "results"

@@ -80,9 +80,10 @@ paths. Repeat `--mutable` for multiple surfaces. Add `--setup` only for a
 trusted, reproducible dependency command that does not reveal holdout content.
 Evaluator, holdout-evaluator, and setup commands only see a fixed, minimal
 environment (`HOME`, `PATH`, `HILL_CLIMBER_*`, ...) — never the parent shell's
-full environment. Repeat `--env KEY=VAL` to add exactly the variables an
-evaluator needs (for example a device flag or log level); nothing else
-crosses that boundary.
+full environment. Repeat `--env KEY` to inherit exactly the variables an
+evaluator needs (for example an API key), or `--env KEY=VAL` for a non-secret
+literal. Durable state stores names only, never values; resume requires the
+same keys to be rehydrated. Nothing else crosses that boundary.
 
 ## Supervision and recovery
 

@@ -1,7 +1,7 @@
 {
   "name": "hill-climber",
   "version": "0.4.0",
-  "description": "Empirical Codex code improvement with isolated candidates, score trajectories, unseen holdouts, and promoted patches.",
+  "description": "Empirical improvement of any measurable file-backed artifact with isolated candidates, unseen holdouts, and promoted patches.",
   "license": "MIT",
   "author": "Ali Abassi",
   "type": "module",

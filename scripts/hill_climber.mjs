@@ -167,19 +167,37 @@ function ensureInside(root, path, label) {
   return target;
 }
 
-function normalizeExtraEnv(value) {
-  if (value === undefined || value === null) return {};
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new ClimbError("E_USAGE", "env must be a flat KEY->VAL object");
+function normalizeEnvKeys(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new ClimbError("E_USAGE", "env_keys must be an array of variable names");
   }
-  const out = {};
-  for (const [k, v] of Object.entries(value)) {
-    if (typeof v !== "string") {
-      throw new ClimbError("E_USAGE", `env.${k} must be a string`);
+  const keys = [];
+  for (const key of value) {
+    if (typeof key !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new ClimbError("E_USAGE", `invalid environment variable name: ${key}`);
     }
-    out[k] = v;
+    if (key.startsWith("HILL_CLIMBER_")) {
+      throw new ClimbError("E_USAGE", `cannot override reserved environment variable: ${key}`);
+    }
+    keys.push(key);
   }
-  return out;
+  return [...new Set(keys)].sort();
+}
+
+function requestedEnv(keys) {
+  const result = {};
+  const missing = [];
+  for (const key of keys ?? []) {
+    if (process.env[key] === undefined) missing.push(key);
+    else result[key] = process.env[key];
+  }
+  if (missing.length) {
+    throw new ClimbError("E_ENV",
+      `required evaluator environment variable(s) are missing: ${missing.join(", ")}`, 2,
+      { next_action: `export ${missing.join(" ")} and rerun or resume with --env KEY` });
+  }
+  return result;
 }
 
 function sanitizeEnv(extra = {}) {
@@ -444,9 +462,7 @@ function validateConfig(config) {
     if (!Array.isArray(config.mutable) || !config.mutable.length) {
       throw new ClimbError("E_USAGE", "at least one mutable glob is required");
     }
-    if (config.env !== undefined && (typeof config.env !== "object" || config.env === null || Array.isArray(config.env))) {
-      throw new ClimbError("E_USAGE", "env must be a flat KEY->VAL object");
-    }
+    normalizeEnvKeys(config.env_keys);
   } else if (!config.experiment) {
     throw new ClimbError("E_USAGE", `hill-climber ${config.action} requires an experiment path`);
   }
@@ -581,12 +597,20 @@ function loadContext(experiment, request = {}) {
       created.payload.config_sha256 !== sha256(jsonBytes(manifest.config))) {
     throw new ClimbError("E_EVIDENCE", "manifest does not match the committed experiment identity", 3);
   }
+  const persistedConfig = { ...manifest.config };
+  // Legacy manifests (before env values were removed from durable state) may
+  // contain `extra_env`. Use only its names at runtime; never re-emit values.
+  const legacyEnvKeys = persistedConfig.extra_env && typeof persistedConfig.extra_env === "object"
+    ? Object.keys(persistedConfig.extra_env) : [];
+  delete persistedConfig.extra_env;
+  const envKeys = normalizeEnvKeys(persistedConfig.extra_env_keys ?? legacyEnvKeys);
   return {
     experiment: root,
     manifest,
     ledger,
     state,
-    config: { ...manifest.config, quiet: Boolean(request.quiet), json: Boolean(request.json) },
+    config: { ...persistedConfig, extra_env_keys: envKeys,
+      quiet: Boolean(request.quiet), json: Boolean(request.json) },
     repo: join(root, "repo"),
     abortController: new AbortController(),
   };
@@ -613,7 +637,7 @@ function createContext(request) {
     holdout_argv: request.holdout_argv,
     holdout_independent: JSON.stringify(request.eval_argv) !== JSON.stringify(request.holdout_argv),
     setup_argv: request.setup_argv ?? [],
-    extra_env: normalizeExtraEnv(request.env),
+    extra_env_keys: normalizeEnvKeys(request.env_keys),
     mutable: request.mutable.map(normalizePath),
     candidates: request.candidates,
     rounds: request.rounds,
@@ -685,6 +709,10 @@ function createContext(request) {
 }
 
 async function assertRuntime(context) {
+  // Fail before candidate generation if a required evaluator secret was not
+  // rehydrated. Only names are stored in durable state; values come from this
+  // controller process on each run/resume.
+  requestedEnv(context.config.extra_env_keys);
   if (Number(process.versions.node.split(".")[0]) < 18) {
     throw new ClimbError("E_RUNTIME", `Codex SDK needs Node 18+; found ${process.version}`);
   }
@@ -719,7 +747,8 @@ async function prepareWorktree(context, worktree) {
   if (!context.config.setup_argv.length) return;
   const result = await runProcess(context.config.setup_argv, {
     cwd: worktree,
-    env: sanitizeEnv({ HILL_CLIMBER_PHASE: "setup", ...context.config.extra_env }),
+    env: sanitizeEnv({ ...requestedEnv(context.config.extra_env_keys),
+      HILL_CLIMBER_PHASE: "setup" }),
     timeoutSeconds: context.config.eval_timeout_seconds,
     signal: context.abortController.signal,
   });
@@ -743,10 +772,10 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
       const result = await runProcess(argv, {
         cwd: worktree,
         env: sanitizeEnv({
+          ...requestedEnv(context.config.extra_env_keys),
           HILL_CLIMBER_PHASE: phase,
           HILL_CLIMBER_SEED: String(seed),
           HILL_CLIMBER_CANDIDATE: id,
-          ...context.config.extra_env,
         }),
         timeoutSeconds: context.config.eval_timeout_seconds,
         signal: context.abortController.signal,
