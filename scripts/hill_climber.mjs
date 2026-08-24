@@ -374,7 +374,18 @@ function evaluatorResult(raw, label) {
       Object.values(gates).some((value) => typeof value !== "boolean")) {
     throw new ClimbError("E_EVALUATOR_OUTPUT", `${label} gates must be a string-to-boolean object`);
   }
-  return { score: Number(parsed.score), gates, details: bounded(parsed.details ?? "", 12000), metrics: parsed.metrics ?? {} };
+  const rawFeedback = parsed.feedback ?? [];
+  const feedback = typeof rawFeedback === "string" ? [rawFeedback] : rawFeedback;
+  if (!Array.isArray(feedback) || feedback.some((value) => typeof value !== "string")) {
+    throw new ClimbError("E_EVALUATOR_OUTPUT", `${label} feedback must be a string or array of strings`);
+  }
+  return {
+    score: Number(parsed.score),
+    gates,
+    details: bounded(parsed.details ?? "", 12000),
+    metrics: parsed.metrics ?? {},
+    feedback: feedback.map((value) => bounded(value, 2000).trim()).filter(Boolean).slice(0, 20),
+  };
 }
 
 function allGatesPass(gates) {
@@ -745,6 +756,12 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
     gates,
     gates_passed: allGatesPass(gates),
     details: results.map((result) => result.details).filter(Boolean),
+    feedback: [...new Set(results.flatMap((result) => result.feedback))].slice(0, 40),
+    metrics: results.map((result) => ({
+      repeat: result.repeat,
+      seed: result.seed,
+      values: result.metrics,
+    })),
   };
   atomicWrite(join(root, "aggregate.json"), aggregate);
   return aggregate;
@@ -771,6 +788,8 @@ Do not edit tests, evaluators, fixtures, Git metadata, package locks outside the
 
 Visible development evidence from earlier completed work (never holdout data):
 ${prior || "Baseline only; inspect the code and local public checks."}
+
+Reflect before editing: diagnose the general failure or success pattern in that evidence, identify one transferable mechanism, and avoid encoding visible case names, literal answers, or one-off branches. Preserve what already works.
 
 When finished, return the required JSON with one mechanism identifier, a falsifiable hypothesis, and a concise summary. The controller ignores self-reported scores and grades the committed diff independently.`;
 }
@@ -857,16 +876,48 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
 }
 
 function priorEvidence(context) {
-  const recent = context.ledger.records.filter((record) =>
-    ["candidate_evaluated", "candidate_invalid", "candidate_crashed", "round_selected"].includes(record.type));
-  return recent.slice(-12).map((record) => {
-    const payload = record.payload;
-    if (record.type === "candidate_evaluated") {
-      return `${payload.candidate_id}: score=${payload.evaluation.score}; gates=${payload.evaluation.gates_passed}; ${bounded(payload.details ?? "", 300)}`;
-    }
-    if (record.type === "round_selected") return `round ${payload.round}: selected ${payload.selected_id ?? "incumbent"}`;
-    return `${payload.candidate_id}: ${record.type} ${bounded(payload.error ?? payload.reason ?? "", 300)}`;
-  }).join("\n");
+  const decisions = new Map();
+  for (const record of context.ledger.records) {
+    if (!["candidate_kept", "candidate_rejected"].includes(record.type)) continue;
+    decisions.set(record.payload.candidate_id, {
+      status: record.type === "candidate_kept" ? "kept" : "rejected",
+      reason: record.payload.reason ?? "unspecified",
+    });
+  }
+  const evaluated = context.ledger.records.filter((record) => record.type === "candidate_evaluated");
+  const lineage = evaluated.filter((record) => decisions.get(record.payload.candidate_id)?.status === "kept").slice(-8);
+  const recent = evaluated.slice(-10);
+  const selected = [...new Map([...lineage, ...recent]
+    .map((record) => [record.payload.candidate_id, record])).values()]
+    .sort((left, right) => left.seq - right.seq);
+  const lines = selected
+    .map((record) => {
+      const payload = record.payload;
+      const metadata = payload.metadata ?? {};
+      const evaluation = payload.evaluation ?? {};
+      const decision = decisions.get(payload.candidate_id) ?? { status: "evaluated", reason: "pending" };
+      const feedback = (evaluation.feedback ?? []).map((value) => safeLine(value)).filter(Boolean).join(" | ");
+      const metrics = bounded(JSON.stringify(evaluation.metrics ?? []), 1200);
+      return [
+        `${payload.candidate_id} [${decision.status}:${decision.reason}]`,
+        `strategy=${payload.strategy ?? "unknown"}`,
+        `mechanism=${safeLine(metadata.mechanism ?? "unknown")}`,
+        `hypothesis=${safeLine(metadata.hypothesis ?? "unknown")}`,
+        `score=${evaluation.score}; gates=${evaluation.gates_passed}`,
+        `diagnostics=${bounded(payload.details ?? "none", 500)}`,
+        `actionable_feedback=${bounded(feedback || "none", 1200)}`,
+        `metrics=${metrics}`,
+      ].join("; ");
+    });
+  const failures = context.ledger.records
+    .filter((record) => ["candidate_invalid", "candidate_crashed"].includes(record.type))
+    .slice(-4)
+    .map((record) => `${record.payload.candidate_id}: ${record.type}; code=${record.payload.code ?? "unknown"}; diagnostic=${bounded(record.payload.error ?? record.payload.reason ?? "none", 500)}`);
+  const selections = context.ledger.records
+    .filter((record) => record.type === "round_selected")
+    .slice(-4)
+    .map((record) => `round ${record.payload.round}: selected ${record.payload.selected_id ?? "incumbent"}; score=${record.payload.incumbent_score_after}`);
+  return bounded([...lines, ...failures, ...selections].join("\n"), 12000);
 }
 
 async function generateCandidate(context, round, index, parent) {
@@ -986,6 +1037,8 @@ async function evaluateCandidates(context, generated) {
         round: candidate.round,
         parent: candidate.parent,
         commit,
+        strategy: candidate.strategy,
+        metadata: candidate.metadata,
         evaluation,
         complexity,
         usage: candidate.usage,
@@ -1381,6 +1434,25 @@ function renderReport(context, receipt) {
   const roundAfter = new Map(context.ledger.records
     .filter((record) => record.type === "round_selected")
     .map((record) => [Number(record.payload.round), Number(record.payload.incumbent_score_after)]));
+  const roundBefore = new Map(context.ledger.records
+    .filter((record) => record.type === "round_selected")
+    .map((record) => [Number(record.payload.round), Number(record.payload.incumbent_score_before)]));
+  const firstIndexByRound = new Map();
+  allCandidates.forEach((candidate, index) => {
+    const round = Number(candidate.round);
+    if (!firstIndexByRound.has(round)) firstIndexByRound.set(round, index);
+  });
+  const routeEdges = allCandidates.map((candidate, index) => {
+    if (!Number.isFinite(Number(candidate.score))) return "";
+    const round = Number(candidate.round);
+    const firstIndex = firstIndexByRound.get(round) ?? 0;
+    const parentX = xFor(firstIndex);
+    const parentY = yFor(roundBefore.get(round) ?? receipt.baseline.score);
+    const candidateX = xFor(index + 1);
+    const candidateY = yFor(candidate.score);
+    const keptRoute = candidate.status === "kept";
+    return `<line data-candidate="${xml(candidate.id)}" class="route ${keptRoute ? "route-kept" : "route-rejected"}" x1="${parentX}" y1="${parentY}" x2="${candidateX}" y2="${candidateY}"/>`;
+  }).join("\n");
   let incumbentScore = Number(receipt.baseline.score);
   let incumbentPath = `M ${xFor(0)} ${yFor(incumbentScore)}`;
   for (let index = 0; index < allCandidates.length; index += 1) {
@@ -1418,8 +1490,8 @@ function renderReport(context, receipt) {
     const labelAnchor = x > chart.right - 150 ? "end" : x < chart.left + 150 ? "start" : "middle";
     const labelX = labelAnchor === "end" ? chart.right - 8 : labelAnchor === "start" ? chart.left + 8 : x;
     const keptLabel = isSelected ? "DEV WINNER" : "KEPT";
-    return `<circle cx="${x}" cy="${y}" r="${isKept ? 7 : 5}" fill="${color}" stroke="#081120" stroke-width="2"/>
-      ${isKept ? `<path d="M ${x} ${calloutStart}V ${calloutEnd}" stroke="#32d583" stroke-width="1"/>
+    return `<circle cx="${x}" cy="${y}" r="${isKept ? 7 : 5}" fill="${color}" stroke="#081120" stroke-width="2"/>${isKept ? `
+      <path d="M ${x} ${calloutStart}V ${calloutEnd}" stroke="#32d583" stroke-width="1"/>
       <text x="${labelX}" y="${calloutY}" class="selected" text-anchor="${labelAnchor}">${keptLabel} · ${xml(candidate.id)} · ${xml(scoreText(candidate.score))}</text>` : ""}`;
   }).join("\n");
 
@@ -1444,6 +1516,9 @@ function renderReport(context, receipt) {
     .axis { fill: #718096; font-size: 11px; }
     .round { fill: #5f718c; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; }
     .grid { stroke: #26344c; stroke-width: 1; stroke-dasharray: 3 5; }
+    .route { fill: none; }
+    .route-rejected { stroke: #66758d; stroke-width: 1.25; stroke-dasharray: 4 4; stroke-opacity: .48; }
+    .route-kept { stroke: #32d583; stroke-width: 2; stroke-opacity: .72; }
     .selected { fill: #32d583; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
   </style>
   <rect width="1200" height="${height}" rx="24" fill="#081120"/>
@@ -1465,6 +1540,7 @@ function renderReport(context, receipt) {
   ${roundBands}
   ${grid}
   <path d="${incumbentAreaPath}" fill="#32d583" fill-opacity=".07"/>
+  ${routeEdges}
   <path d="${incumbentPath}" fill="none" stroke="#32d583" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="${xFor(0)}" cy="${yFor(receipt.baseline.score)}" r="6" fill="#58a6ff" stroke="#081120" stroke-width="2"/>
   ${candidateMarks}

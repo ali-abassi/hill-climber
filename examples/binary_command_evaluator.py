@@ -24,6 +24,7 @@ def main() -> int:
         "gates": {"command": passed},
         "details": diagnostic,
         "metrics": {"exit_code": result.returncode},
+        "feedback": [diagnostic] if diagnostic else [],
     }, separators=(",", ":")))
     return 0
 

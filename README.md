@@ -76,7 +76,7 @@ hill-climber --version
 ```
 
 ```text
-hill-climber 0.3.0
+hill-climber 0.4.0
 ```
 
 The installer uses the ChatGPT subscription already authenticated by the Codex
@@ -111,7 +111,9 @@ JSON object:
 {
   "score": 0.85,
   "gates": {"tests": true, "lint": true},
-  "details": "17 of 20 behavioral cases passed"
+  "details": "17 of 20 behavioral cases passed",
+  "metrics": {"passed": 17, "total": 20},
+  "feedback": ["Compound units pass; whitespace normalization still fails."]
 }
 ```
 
@@ -119,14 +121,17 @@ Higher scores are better; every gate must pass. Keep holdout code and data
 outside the repository and never reveal its cases through prompts, setup, or
 development diagnostics. See the
 [starter evaluator](examples/binary_command_evaluator.py) for the smallest
-working contract.
+working contract. `feedback` is optional, bounded actionable development
+information for later rounds; it may be one string or an array of strings.
 
 ## How the climb works
 
 1. **Measure base camp.** Grade the untouched commit through the same
    development evaluator path used for candidates.
-2. **Open five routes.** Start five fresh Codex SDK threads—root cause, edge
-   coverage, simplification, alternative design, and adversarial hardening.
+2. **Reflect, then open five routes.** Later rounds receive bounded development
+   diagnostics, metrics, candidate hypotheses, and keep/reject decisions, then
+   start five fresh Codex SDK threads—root cause, edge coverage,
+   simplification, alternative design, and adversarial hardening.
 3. **Keep routes isolated.** Each candidate writes to its own Git worktree;
    authored changes outside `--mutable` invalidate it.
 4. **Grade away from the agent.** Commit the candidate, remove its generation
@@ -143,10 +148,11 @@ the holdout begins, that holdout is closed and never replayed.
 
 Every completed experiment writes a self-contained `report.svg` from the same
 hash-chained evidence as `receipt.json`. The graph groups every evaluated
-candidate by round, preserves rejected routes, and draws each strict incumbent
-gain as the thick green best-verified staircase. Retained and holdout-reverted
-runs get the same report without being presented as successes. The README hero
-is a [four-round deterministic protocol receipt](benchmarks/protocol); it is not
+candidate by round, draws every accepted and rejected route from its round
+incumbent, and renders each strict incumbent gain as the thick green
+best-verified staircase. Retained and holdout-reverted runs get the same report
+without being presented as successes. The README hero is a
+[four-round deterministic protocol receipt](benchmarks/protocol); it is not
 presented as model performance.
 
 ## Benchmark receipt
@@ -265,7 +271,7 @@ The committed deterministic suite covers:
 - manifest, state, and ledger tamper rejection.
 
 The disclosed real-Codex smoke benchmark adds a full receipt, ledger, patch, and
-score graph for one code task. Public CI runs all eight tests plus
+score graph for one code task. Public CI runs all ten tests plus
 syntax checks and a production dependency audit. Together these validate the
 controller protocol and one observed improvement; they do **not** establish a
 general success rate or superiority over AutoAgent, autoresearch, manual Codex,
@@ -286,5 +292,5 @@ on sensitive code.
 ## Project
 
 [Agent operating skill](SKILL.md) · [Security](SECURITY.md) ·
-[Design and research](docs/design.md) · [Contributing](CONTRIBUTING.md) ·
+[Design and research](docs/design.md) · [GEPA source survey](docs/gepa-research.md) · [Contributing](CONTRIBUTING.md) ·
 [Changelog](CHANGELOG.md) · [MIT license](LICENSE)

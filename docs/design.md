@@ -31,9 +31,16 @@ used current repository code and documentation, not star counts alone.
 - [Tripwire](https://github.com/mornepousse/tripwire) reinforces the need for
   evaluator anti-weakening, captured failures, and test-count or assertion
   ratchets when the evaluator itself lives near agent-editable code.
+- [GEPA](https://github.com/gepa-ai/gepa), its
+  [DSPy integration](https://github.com/stanfordnlp/dspy), and
+  [GEPA Viz](https://github.com/modaic-ai/gepa-viz) show the value of actionable
+  evaluator feedback, explicit candidate lineage, per-instance Pareto memory,
+  and accepted/rejected route visualization. The complete source-level
+  [GEPA survey and steal-list](gepa-research.md) separates mechanics carried
+  into this controller from features that require a stronger eval contract.
 
-AutoAgent and autoresearch advertised MIT in prose at the inspected revisions
-but had no repository license file. No source was copied from either project.
+AutoAgent and autoresearch include MIT licenses at the inspected revisions. No
+source was copied from either project.
 
 ## Decisions carried into `hill-climber`
 
@@ -50,12 +57,15 @@ but had no repository license file. No source was copied from either project.
 | Preserve subscription auth without leaking secrets | The SDK receives only an environment allowlist containing the cached ChatGPT login locations, not arbitrary API keys or CI secrets. |
 | Prefer simpler equal solutions | Score, repeat floor, gates, changed-line count, then candidate ID determine a stable ranking. |
 | Make progress inspectable | Every terminal run renders candidate scores and the round incumbent as a self-contained SVG backed by the same receipt and ledger. |
+| Learn from more than a scalar | Bounded development feedback, metrics, candidate mechanisms, hypotheses, and keep/reject decisions are preserved and supplied to later rounds; holdout evidence never enters this channel. |
+| Show experimental lineage | The report draws solid kept routes and dashed rejected routes from each round's immutable incumbent. |
 
 ## Intentionally deferred
 
-Population archives, crossover, multi-island migration, learned memories,
-distributed workers, LLM judges, cost estimation, and remote sandboxes are not
-part of the first CLI. They add value only after repeated local rounds show
-that five isolated neighbors, deterministic graders, and a private holdout are
-the bottleneck. The current runner exposes stable experiment artifacts so those
-mechanisms can be added without putting control flow back into a prompt.
+Per-case Pareto parent selection, crossover, multi-island migration,
+distributed workers, built-in LLM judges, cost estimation, and remote
+sandboxes are not part of the current CLI. Pareto or merge selection requires
+versioned per-case/objective scores and directions; arbitrary informational
+metrics are not a sound substitute. The current runner exposes stable
+experiment artifacts so those mechanisms can be added without putting control
+flow back into a prompt.

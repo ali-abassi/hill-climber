@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — 2026-08-24
+
+- Added bounded actionable evaluator feedback and preserved per-repeat metrics
+  as development evidence for later rounds.
+- Added reflective candidate memory containing strategy, mechanism,
+  hypothesis, diagnostics, and keep/reject decisions without exposing holdout
+  evidence.
+- Added accepted and rejected lineage edges to every score report so the chart
+  shows the actual routes attempted from each incumbent.
+- Added a source-level GEPA/DSPy/GEPA Viz survey with an explicit steal-now,
+  defer, and avoid decision record.
+
 ## 0.3.0 — 2026-08-24
 
 - Replaced the one-jump README hero with a disclosed four-round protocol

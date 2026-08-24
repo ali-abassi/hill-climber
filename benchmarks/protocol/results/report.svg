@@ -14,6 +14,9 @@
     .axis { fill: #718096; font-size: 11px; }
     .round { fill: #5f718c; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; }
     .grid { stroke: #26344c; stroke-width: 1; stroke-dasharray: 3 5; }
+    .route { fill: none; }
+    .route-rejected { stroke: #66758d; stroke-width: 1.25; stroke-dasharray: 4 4; stroke-opacity: .48; }
+    .route-kept { stroke: #32d583; stroke-width: 2; stroke-opacity: .72; }
     .selected { fill: #32d583; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
   </style>
   <rect width="1200" height="820" rx="24" fill="#081120"/>
@@ -51,52 +54,56 @@
 <line x1="100" y1="228" x2="1132" y2="228" class="grid"/>
     <text x="86" y="232" class="axis" text-anchor="end">22.4</text>
   <path d="M 100 466.4516129032258 H 151.6 H 203.2 H 254.8 H 306.4 H 358 V 413.22580645161287 H 409.6 H 461.2 H 512.8 H 564.4 H 616 V 360 H 667.6 H 719.2 H 770.8 H 822.4 H 874 V 306.7741935483871 H 925.6 H 977.2 H 1028.8 H 1080.4 H 1132 V 253.54838709677418 L 1132 492 L 100 492 Z" fill="#32d583" fill-opacity=".07"/>
+  <line data-candidate="r01-c01" class="route route-rejected" x1="100" y1="466.4516129032258" x2="151.6" y2="445.1612903225806"/>
+<line data-candidate="r01-c02" class="route route-kept" x1="100" y1="466.4516129032258" x2="203.2" y2="413.22580645161287"/>
+<line data-candidate="r01-c03" class="route route-rejected" x1="100" y1="466.4516129032258" x2="254.8" y2="455.80645161290323"/>
+<line data-candidate="r01-c04" class="route route-rejected" x1="100" y1="466.4516129032258" x2="306.4" y2="423.8709677419355"/>
+<line data-candidate="r01-c05" class="route route-rejected" x1="100" y1="466.4516129032258" x2="358" y2="434.51612903225805"/>
+<line data-candidate="r02-c01" class="route route-rejected" x1="358" y1="413.22580645161287" x2="409.6" y2="391.93548387096774"/>
+<line data-candidate="r02-c02" class="route route-kept" x1="358" y1="413.22580645161287" x2="461.2" y2="360"/>
+<line data-candidate="r02-c03" class="route route-rejected" x1="358" y1="413.22580645161287" x2="512.8" y2="402.5806451612903"/>
+<line data-candidate="r02-c04" class="route route-rejected" x1="358" y1="413.22580645161287" x2="564.4" y2="370.64516129032256"/>
+<line data-candidate="r02-c05" class="route route-rejected" x1="358" y1="413.22580645161287" x2="616" y2="381.2903225806451"/>
+<line data-candidate="r03-c01" class="route route-rejected" x1="616" y1="360" x2="667.6" y2="338.7096774193548"/>
+<line data-candidate="r03-c02" class="route route-kept" x1="616" y1="360" x2="719.2" y2="306.7741935483871"/>
+<line data-candidate="r03-c03" class="route route-rejected" x1="616" y1="360" x2="770.8" y2="349.35483870967744"/>
+<line data-candidate="r03-c04" class="route route-rejected" x1="616" y1="360" x2="822.4" y2="317.4193548387097"/>
+<line data-candidate="r03-c05" class="route route-rejected" x1="616" y1="360" x2="874" y2="328.0645161290322"/>
+<line data-candidate="r04-c01" class="route route-rejected" x1="874" y1="306.7741935483871" x2="925.6" y2="285.48387096774195"/>
+<line data-candidate="r04-c02" class="route route-kept" x1="874" y1="306.7741935483871" x2="977.2" y2="253.54838709677418"/>
+<line data-candidate="r04-c03" class="route route-rejected" x1="874" y1="306.7741935483871" x2="1028.8" y2="296.1290322580645"/>
+<line data-candidate="r04-c04" class="route route-rejected" x1="874" y1="306.7741935483871" x2="1080.4" y2="264.19354838709677"/>
+<line data-candidate="r04-c05" class="route route-rejected" x1="874" y1="306.7741935483871" x2="1132" y2="274.83870967741933"/>
   <path d="M 100 466.4516129032258 H 151.6 H 203.2 H 254.8 H 306.4 H 358 V 413.22580645161287 H 409.6 H 461.2 H 512.8 H 564.4 H 616 V 360 H 667.6 H 719.2 H 770.8 H 822.4 H 874 V 306.7741935483871 H 925.6 H 977.2 H 1028.8 H 1080.4 H 1132 V 253.54838709677418" fill="none" stroke="#32d583" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="100" cy="466.4516129032258" r="6" fill="#58a6ff" stroke="#081120" stroke-width="2"/>
-  <circle cx="151.6" cy="455.80645161290323" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="203.2" cy="445.1612903225806" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="254.8" cy="434.51612903225805" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
+  <circle cx="151.6" cy="445.1612903225806" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="203.2" cy="413.22580645161287" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 203.2 404.22580645161287V 396.22580645161287" stroke="#32d583" stroke-width="1"/>
+      <text x="108" y="391.22580645161287" class="selected" text-anchor="start">KEPT · r01-c02 · 5</text>
+<circle cx="254.8" cy="455.80645161290323" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
 <circle cx="306.4" cy="423.8709677419355" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="358" cy="413.22580645161287" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
-      <path d="M 358 404.22580645161287V 396.22580645161287" stroke="#32d583" stroke-width="1"/>
-      <text x="358" y="391.22580645161287" class="selected" text-anchor="middle">KEPT · r01-c05 · 5</text>
-<circle cx="409.6" cy="402.5806451612903" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="461.2" cy="391.93548387096774" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="512.8" cy="381.2903225806451" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
+<circle cx="358" cy="434.51612903225805" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="409.6" cy="391.93548387096774" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="461.2" cy="360" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 461.2 351V 343" stroke="#32d583" stroke-width="1"/>
+      <text x="461.2" y="338" class="selected" text-anchor="middle">KEPT · r02-c02 · 10</text>
+<circle cx="512.8" cy="402.5806451612903" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
 <circle cx="564.4" cy="370.64516129032256" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="616" cy="360" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
-      <path d="M 616 351V 343" stroke="#32d583" stroke-width="1"/>
-      <text x="616" y="338" class="selected" text-anchor="middle">KEPT · r02-c05 · 10</text>
-<circle cx="667.6" cy="349.35483870967744" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="719.2" cy="338.7096774193548" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="770.8" cy="328.0645161290322" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
+<circle cx="616" cy="381.2903225806451" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="667.6" cy="338.7096774193548" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="719.2" cy="306.7741935483871" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 719.2 297.7741935483871V 289.7741935483871" stroke="#32d583" stroke-width="1"/>
+      <text x="719.2" y="284.7741935483871" class="selected" text-anchor="middle">KEPT · r03-c02 · 15</text>
+<circle cx="770.8" cy="349.35483870967744" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
 <circle cx="822.4" cy="317.4193548387097" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="874" cy="306.7741935483871" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
-      <path d="M 874 297.7741935483871V 289.7741935483871" stroke="#32d583" stroke-width="1"/>
-      <text x="874" y="284.7741935483871" class="selected" text-anchor="middle">KEPT · r03-c05 · 15</text>
-<circle cx="925.6" cy="296.1290322580645" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="977.2" cy="285.48387096774195" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="1028.8" cy="274.83870967741933" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
+<circle cx="874" cy="328.0645161290322" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="925.6" cy="285.48387096774195" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
+<circle cx="977.2" cy="253.54838709677418" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
+      <path d="M 977.2 262.54838709677415V 275.54838709677415" stroke="#32d583" stroke-width="1"/>
+      <text x="977.2" y="287.54838709677415" class="selected" text-anchor="middle">DEV WINNER · r04-c02 · 20</text>
+<circle cx="1028.8" cy="296.1290322580645" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
 <circle cx="1080.4" cy="264.19354838709677" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
-      
-<circle cx="1132" cy="253.54838709677418" r="7" fill="#32d583" stroke="#081120" stroke-width="2"/>
-      <path d="M 1132 262.54838709677415V 275.54838709677415" stroke="#32d583" stroke-width="1"/>
-      <text x="1124" y="287.54838709677415" class="selected" text-anchor="end">DEV WINNER · r04-c05 · 20</text>
+<circle cx="1132" cy="274.83870967741933" r="5" fill="#66758d" stroke="#081120" stroke-width="2"/>
   <text x="151.6" y="517" class="axis" text-anchor="middle">1</text><text x="203.2" y="517" class="axis" text-anchor="middle">2</text><text x="306.4" y="517" class="axis" text-anchor="middle">4</text><text x="409.6" y="517" class="axis" text-anchor="middle">6</text><text x="512.8" y="517" class="axis" text-anchor="middle">8</text><text x="616" y="517" class="axis" text-anchor="middle">10</text><text x="719.2" y="517" class="axis" text-anchor="middle">12</text><text x="822.4" y="517" class="axis" text-anchor="middle">14</text><text x="925.6" y="517" class="axis" text-anchor="middle">16</text><text x="1028.8" y="517" class="axis" text-anchor="middle">18</text><text x="1132" y="517" class="axis" text-anchor="middle">20</text>
   <text x="100" y="517" class="axis" text-anchor="middle">0</text>
   <text x="616" y="539" class="axis" text-anchor="middle">candidate attempt · grouped by round</text>
@@ -115,6 +122,6 @@
   <text x="798" y="678" class="label" fill="#8b98ad">SOURCE</text>
   <text x="868" y="678" class="metric">YES — PATCH APPLIED</text>
   <text x="798" y="709" class="muted">20 candidates · 4 kept · 16 rejected</text>
-  <text x="798" y="731" class="muted">600 tokens · 7.073s · 4 rounds</text>
-  <text x="40" y="796" class="muted">experiment experiment · 2026-08-24T17:44:47.166Z · machine receipt: receipt.json</text>
+  <text x="798" y="731" class="muted">600 tokens · 7.161s · 4 rounds</text>
+  <text x="40" y="796" class="muted">experiment experiment · 2026-08-24T19:47:50.413Z · machine receipt: receipt.json</text>
 </svg>

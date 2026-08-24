@@ -7,8 +7,9 @@ selects one strict gain, starts the next round from that immutable incumbent,
 and repeats for four rounds before the holdout boundary.
 
 The recorded run evaluates 20 candidates and climbs `0 → 5 → 10 → 15 → 20`.
-Every point and incumbent step in `results/report.svg` comes from the accompanying
-hash-chained ledger and machine receipt.
+Every point, accepted/rejected route, and incumbent step in
+`results/report.svg` comes from the accompanying hash-chained ledger and
+machine receipt.
 
 Reproduce and replace the disclosed receipt from the repository root:
 

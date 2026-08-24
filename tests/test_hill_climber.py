@@ -18,6 +18,7 @@ CLI = ROOT / "bin" / "hill-climber"
 FAKE_SDK = ROOT / "tests" / "fixtures" / "fake_codex_sdk.mjs"
 EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
+INVALID_FEEDBACK_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_feedback_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
 BENCHMARK = ROOT / "benchmarks" / "duration"
 PROTOCOL_BENCHMARK = ROOT / "benchmarks" / "protocol"
@@ -107,6 +108,35 @@ class HillClimberTests(unittest.TestCase):
             report = (experiment / "report.svg").read_text(encoding="utf-8")
             self.assertIn("4 rounds. 4 verified climbs.", report)
             self.assertIn("ROUND 4", report)
+            self.assertIn('class="route route-kept"', report)
+            self.assertIn('class="route route-rejected"', report)
+
+            second_round_prompt = (
+                experiment / "candidates" / "r02-c01" / "prompt.txt"
+            ).read_text(encoding="utf-8")
+            self.assertIn("Reflect before editing", second_round_prompt)
+            self.assertIn("mechanism=fixture-staircase-1-2", second_round_prompt)
+            self.assertIn("actionable_feedback=Generalize the staircase improvement", second_round_prompt)
+            evidence_block = second_round_prompt.lower().split(
+                "visible development evidence from earlier completed work", 1
+            )[1].split("reflect before editing", 1)[0]
+            self.assertNotIn(":holdout:", evidence_block)
+
+            first_result = json.loads((
+                experiment / "candidates" / "r01-c01" / "result.json"
+            ).read_text(encoding="utf-8"))
+            self.assertEqual(first_result["evaluation"]["metrics"][0]["values"], {"value": 2})
+            self.assertEqual(
+                first_result["evaluation"]["feedback"],
+                ["Generalize the staircase improvement without hard-coding this visible value."],
+            )
+
+            events = [
+                json.loads(line)
+                for line in (experiment / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            evaluated = next(event for event in events if event["type"] == "candidate_evaluated")
+            self.assertEqual(evaluated["payload"]["metadata"]["mechanism"], "fixture-staircase-1-1")
             ET.fromstring(report)
 
     def assert_ledger_chain(self, experiment: Path) -> None:
@@ -290,6 +320,7 @@ class HillClimberTests(unittest.TestCase):
             ("auth", "E_AUTH", "codex login"),
             ("sdk", "E_SDK", "reinstall"),
             ("evaluator", "E_EVALUATOR_OUTPUT", "fix the evaluator"),
+            ("feedback", "E_EVALUATOR_OUTPUT", "fix the evaluator"),
             ("evaluator_exit", "E_EVALUATOR", "fix the evaluator"),
         )
         for case, expected, action in cases:
@@ -304,8 +335,11 @@ class HillClimberTests(unittest.TestCase):
                     codex.chmod(0o755)
                 elif case == "sdk":
                     environment["HILL_CLIMBER_CODEX_MODULE"] = str(root / "missing-sdk.mjs")
-                evaluator_path = (INVALID_EVALUATOR if case == "evaluator" else
-                                  FAILING_EVALUATOR if case == "evaluator_exit" else EVALUATOR)
+                evaluator_path = (
+                    INVALID_EVALUATOR if case == "evaluator" else
+                    INVALID_FEEDBACK_EVALUATOR if case == "feedback" else
+                    FAILING_EVALUATOR if case == "evaluator_exit" else EVALUATOR
+                )
                 evaluator = shlex.join([str(PRODUCT_PYTHON), str(evaluator_path), "easy", "development"])
                 holdout = shlex.join([str(PRODUCT_PYTHON), str(EVALUATOR), "easy", "holdout"])
                 result = subprocess.run([

@@ -31,4 +31,7 @@ print(json.dumps({
     "gates": gates,
     "details": f"{scenario}:{phase}:value={value}",
     "metrics": {"value": value},
+    "feedback": [
+        f"Generalize the {scenario} improvement without hard-coding this visible value."
+    ] if phase == "development" else [],
 }, separators=(",", ":")))

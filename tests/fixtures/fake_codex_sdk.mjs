@@ -8,7 +8,7 @@ const PLANS = {
   cheater: [100, 5, 2, 3, 4],
   slowholdout: [1, 5, 2, 3, 4],
   mixed: [1, 5, 2, 3, 4],
-  staircase: [1, 2, 3, 4, 5],
+  staircase: [2, 5, 1, 4, 3],
 };
 
 export class Codex {

@@ -34,7 +34,9 @@ Never let a candidate:
    holdout evaluator. Keep both outside all mutable paths; keep the holdout
    outside the repository whenever possible.
 5. Require evaluator stdout to be exactly one JSON object with finite numeric
-   `score`, boolean `gates`, and optional bounded `details`/`metrics`.
+   `score`, boolean `gates`, and optional bounded `details`, `metrics`, and
+   `feedback`. Feedback is a string or string array containing actionable
+   development diagnostics, never holdout content.
 6. Select the narrowest repository-relative `--mutable` globs that can solve
    the task.
 7. Choose explicit wall, token, failure, plateau, target, and repeat budgets.
@@ -102,6 +104,9 @@ failed experiment into a success narrative.
 
 - Higher scores are better. Prefer behavioral pass fractions or other granular,
   deterministic measures over a binary score.
+- Return concise actionable `feedback` when a human could diagnose more from
+  the failure than its scalar score. Later rounds receive it together with the
+  prior mechanism, hypothesis, metrics, and keep/reject verdict.
 - Use paired seeds/repeats when evaluation is noisy.
 - Put non-negotiable correctness, security, compatibility, or test-count
   conditions in boolean gates.
