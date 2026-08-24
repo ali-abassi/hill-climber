@@ -106,6 +106,10 @@ failed experiment into a success narrative.
 - Put non-negotiable correctness, security, compatibility, or test-count
   conditions in boolean gates.
 - Keep scoring code fixed for the entire experiment.
+- For subjective artifacts, combine deterministic gates with a versioned LLM
+  rubric, clean-context repeated judgments, human-label calibration, and a
+  fresh promotion panel. Follow `docs/llm-judged-visuals.md`; never treat one
+  model verdict as ground truth.
 - A score is only as meaningful as its evaluator. Call out weak proxies and
   refuse promotion when the evaluator does not measure the stated goal.
 - Treat `--max-tokens` and `--max-wall-seconds` as round-boundary stop

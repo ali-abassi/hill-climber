@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const PLANS = {
@@ -8,6 +8,7 @@ const PLANS = {
   cheater: [100, 5, 2, 3, 4],
   slowholdout: [1, 5, 2, 3, 4],
   mixed: [1, 5, 2, 3, 4],
+  staircase: [1, 2, 3, 4, 5],
 };
 
 export class Codex {
@@ -30,8 +31,11 @@ export class Codex {
         }
         const match = prompt.match(/candidate (\d+)\/\d+/i);
         const index = Number(match?.[1] ?? 1) - 1;
+        const round = Number(prompt.match(/round (\d+)/i)?.[1] ?? 1);
         const scenario = process.env.HILL_CLIMBER_FAKE_SCENARIO ?? "easy";
-        const value = (PLANS[scenario] ?? PLANS.easy)[index];
+        const planValue = (PLANS[scenario] ?? PLANS.easy)[index];
+        const incumbent = Number(readFileSync(join(options.workingDirectory, "solution.txt"), "utf8").trim());
+        const value = scenario === "staircase" ? incumbent + planValue : planValue;
         writeFileSync(join(options.workingDirectory, "solution.txt"), `${value}\n`, "utf8");
         if (index === 0) {
           const cache = join(options.workingDirectory, "__pycache__");
@@ -40,16 +44,16 @@ export class Codex {
         }
         async function* events() {
           if (signal?.aborted) throw new Error("aborted");
-          yield { type: "thread.started", thread_id: `fake-${scenario}-${index + 1}` };
+          yield { type: "thread.started", thread_id: `fake-${scenario}-${round}-${index + 1}` };
           yield { type: "turn.started" };
           yield {
             type: "item.completed",
             item: {
               type: "agent_message",
               text: JSON.stringify({
-                mechanism: `fixture-${scenario}-${index + 1}`,
-                hypothesis: `fixture value ${value} improves the score`,
-                summary: `set the fixture solution to ${value}`,
+                mechanism: `fixture-${scenario}-${round}-${index + 1}`,
+                hypothesis: `round ${round} fixture value ${value} improves the score`,
+                summary: `set the round ${round} fixture solution to ${value}`,
               }),
             },
           };

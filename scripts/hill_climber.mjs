@@ -1324,6 +1324,11 @@ function renderReport(context, receipt) {
   const kept = context.ledger.records.filter((record) => record.type === "candidate_kept").at(-1)?.payload ?? null;
   const selectedId = kept?.candidate_id ?? null;
   const selected = allCandidates.find((candidate) => candidate.id === selectedId) ?? null;
+  const keptCount = allCandidates.filter((candidate) => candidate.status === "kept").length;
+  const roundIds = [...new Set(allCandidates.map((candidate) => Number(candidate.round)))]
+    .filter(Number.isFinite).sort((left, right) => left - right);
+  const roundNoun = roundIds.length === 1 ? "round" : "rounds";
+  const climbNoun = keptCount === 1 ? "verified climb" : "verified climbs";
   const height = 820;
   const promoted = receipt.status === "promoted";
   const accent = promoted ? "#32d583" : "#f5b942";
@@ -1352,6 +1357,19 @@ function renderReport(context, receipt) {
   const xFor = (index) => chart.left + ((chart.right - chart.left) * index / Math.max(1, allCandidates.length));
   const yFor = (score) => chart.bottom - ((Number(score) - scoreMin) / (scoreMax - scoreMin)) * (chart.bottom - chart.top);
 
+  const roundBands = roundIds.map((round, roundIndex) => {
+    const indexes = allCandidates.map((candidate, index) => Number(candidate.round) === round ? index : -1)
+      .filter((index) => index >= 0);
+    const first = indexes[0];
+    const last = indexes.at(-1);
+    const left = first === 0 ? chart.left : (xFor(first) + xFor(first + 1)) / 2;
+    const right = last === allCandidates.length - 1
+      ? chart.right
+      : (xFor(last + 1) + xFor(last + 2)) / 2;
+    return `<rect x="${left}" y="${chart.top}" width="${right - left}" height="${chart.bottom - chart.top}" fill="${roundIndex % 2 === 0 ? "#111f34" : "#0b1526"}" fill-opacity=".52"/>
+      <text x="${(left + right) / 2}" y="${chart.top + 18}" class="round" text-anchor="middle">ROUND ${round}</text>`;
+  }).join("\n");
+
   const grid = Array.from({ length: 5 }, (_, index) => {
     const ratio = index / 4;
     const y = chart.bottom - ratio * (chart.bottom - chart.top);
@@ -1376,6 +1394,7 @@ function renderReport(context, receipt) {
       incumbentPath += ` V ${yFor(incumbentScore)}`;
     }
   }
+  const incumbentAreaPath = `${incumbentPath} L ${xFor(allCandidates.length)} ${chart.bottom} L ${xFor(0)} ${chart.bottom} Z`;
 
   const attemptTicks = allCandidates.map((candidate, index) => {
     const stride = Math.max(1, Math.ceil(allCandidates.length / 10));
@@ -1392,11 +1411,16 @@ function renderReport(context, receipt) {
     const isSelected = candidate.id === selectedId;
     const isKept = candidate.status === "kept";
     const color = isKept ? "#32d583" : candidate.gates === false ? "#f5b942" : "#66758d";
-    const calloutY = Math.max(chart.top + 18, y - 22);
+    const calloutBelow = y < chart.top + 52;
+    const calloutY = calloutBelow ? y + 34 : Math.max(chart.top + 18, y - 22);
+    const calloutStart = calloutBelow ? y + 9 : y - 9;
+    const calloutEnd = calloutBelow ? calloutY - 12 : calloutY + 5;
+    const labelAnchor = x > chart.right - 150 ? "end" : x < chart.left + 150 ? "start" : "middle";
+    const labelX = labelAnchor === "end" ? chart.right - 8 : labelAnchor === "start" ? chart.left + 8 : x;
     const keptLabel = isSelected ? "DEV WINNER" : "KEPT";
     return `<circle cx="${x}" cy="${y}" r="${isKept ? 7 : 5}" fill="${color}" stroke="#081120" stroke-width="2"/>
-      ${isKept ? `<path d="M ${x} ${y - 9}V ${calloutY + 5}" stroke="#32d583" stroke-width="1"/>
-      <text x="${x}" y="${calloutY}" class="selected" text-anchor="middle">${keptLabel} · ${xml(candidate.id)} · ${xml(scoreText(candidate.score))}</text>` : ""}`;
+      ${isKept ? `<path d="M ${x} ${calloutStart}V ${calloutEnd}" stroke="#32d583" stroke-width="1"/>
+      <text x="${labelX}" y="${calloutY}" class="selected" text-anchor="${labelAnchor}">${keptLabel} · ${xml(candidate.id)} · ${xml(scoreText(candidate.score))}</text>` : ""}`;
   }).join("\n");
 
   const task = xml(shortLine(receipt.task, 128));
@@ -1406,7 +1430,7 @@ function renderReport(context, receipt) {
   const applied = receipt.applied ? "YES — PATCH APPLIED" : promoted ? "NO — PATCH SAVED" : "NO — BASELINE KEPT";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}" viewBox="0 0 1200 ${height}" role="img" aria-labelledby="title desc">
   <title id="title">Hill Climber result: ${xml(statusLabel.toLowerCase())}</title>
-  <desc id="desc">Baseline and candidate scores, selected development route, private holdout verdict, usage, and application state.</desc>
+  <desc id="desc">A multi-round hill climb showing every candidate, rejected routes, verified incumbent steps, private holdout verdict, usage, and application state.</desc>
   <style>
     text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .eyebrow { fill: #32d583; font-size: 13px; font-weight: 800; letter-spacing: 2.2px; }
@@ -1418,32 +1442,35 @@ function renderReport(context, receipt) {
     .body { fill: #c6cfdd; font-size: 15px; }
     .metric { fill: #f7f9fc; font-size: 17px; font-weight: 700; }
     .axis { fill: #718096; font-size: 11px; }
+    .round { fill: #5f718c; font-size: 10px; font-weight: 800; letter-spacing: 1.4px; }
     .grid { stroke: #26344c; stroke-width: 1; stroke-dasharray: 3 5; }
     .selected { fill: #32d583; font-size: 10px; font-weight: 800; letter-spacing: .6px; }
   </style>
   <rect width="1200" height="${height}" rx="24" fill="#081120"/>
   <path d="M0 0h1200v6H0z" fill="${accent}"/>
   <text x="40" y="48" class="eyebrow">HILL CLIMBER · VERIFIED RUN REPORT</text>
-  <text x="40" y="92" class="title">${allCandidates.length} routes in. One evidence-backed outcome.</text>
+  <text x="40" y="92" class="title">${roundIds.length} ${roundNoun}. ${keptCount} ${climbNoun}.</text>
   <rect x="1016" y="35" width="144" height="42" rx="21" fill="${accent}" fill-opacity=".13" stroke="${accent}"/>
   <text x="1088" y="61" class="label" fill="${accent}" text-anchor="middle">${xml(statusLabel)}</text>
   <text x="40" y="124" class="task">${task}</text>
 
   <rect x="40" y="154" width="1120" height="402" rx="18" fill="#0d1728" stroke="#26344c"/>
-  <text x="64" y="188" class="label" fill="#8b98ad">DEVELOPMENT SCORE TRAJECTORY</text>
-  <line x1="810" y1="184" x2="842" y2="184" stroke="#32d583" stroke-width="3"/>
-  <text x="850" y="188" class="axis">round incumbent</text>
+  <text x="64" y="188" class="label" fill="#8b98ad">VERIFIED HILL-CLIMB TRAJECTORY</text>
+  <line x1="786" y1="184" x2="818" y2="184" stroke="#32d583" stroke-width="4"/>
+  <text x="826" y="188" class="axis">best verified</text>
   <circle cx="966" cy="184" r="5" fill="#66758d"/>
   <text x="978" y="188" class="axis">rejected</text>
   <circle cx="1054" cy="184" r="6" fill="#32d583"/>
   <text x="1066" y="188" class="axis">kept</text>
+  ${roundBands}
   ${grid}
-  <path d="${incumbentPath}" fill="none" stroke="#32d583" stroke-width="3" stroke-linejoin="round"/>
+  <path d="${incumbentAreaPath}" fill="#32d583" fill-opacity=".07"/>
+  <path d="${incumbentPath}" fill="none" stroke="#32d583" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="${xFor(0)}" cy="${yFor(receipt.baseline.score)}" r="6" fill="#58a6ff" stroke="#081120" stroke-width="2"/>
   ${candidateMarks}
   ${attemptTicks}
   <text x="${chart.left}" y="${chart.bottom + 25}" class="axis" text-anchor="middle">0</text>
-  <text x="${(chart.left + chart.right) / 2}" y="${chart.bottom + 47}" class="axis" text-anchor="middle">candidate attempt</text>
+  <text x="${(chart.left + chart.right) / 2}" y="${chart.bottom + 47}" class="axis" text-anchor="middle">candidate attempt · grouped by round</text>
 
   <rect x="40" y="580" width="710" height="166" rx="18" fill="#0d1728" stroke="${accent}" stroke-opacity=".8"/>
   <circle cx="72" cy="618" r="10" fill="${accent}"/>

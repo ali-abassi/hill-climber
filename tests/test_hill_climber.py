@@ -20,6 +20,7 @@ EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
 BENCHMARK = ROOT / "benchmarks" / "duration"
+PROTOCOL_BENCHMARK = ROOT / "benchmarks" / "protocol"
 PRODUCT_PYTHON = ROOT / ".venv" / "bin" / "python"
 if not PRODUCT_PYTHON.is_file():
     PRODUCT_PYTHON = Path(sys.executable)
@@ -58,7 +59,8 @@ class HillClimberTests(unittest.TestCase):
             "NO_COLOR": "1",
         }
 
-    def run_climb(self, root: Path, scenario: str, *, apply: bool = True) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    def run_climb(self, root: Path, scenario: str, *, apply: bool = True,
+                  rounds: int = 1) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
         repo = self.make_repo(root)
         experiment = root / "experiment"
         task = (
@@ -77,6 +79,7 @@ class HillClimberTests(unittest.TestCase):
             "--holdout-eval", holdout,
             "--mutable", "solution.txt",
             "--candidates", "5",
+            "--rounds", str(rounds),
             "--generation-parallel", "2",
             "--out", str(experiment),
             "--json",
@@ -88,6 +91,23 @@ class HillClimberTests(unittest.TestCase):
             text=True, capture_output=True, timeout=90, check=False,
         )
         return result, repo, experiment
+
+    def test_multi_round_demo_renders_a_literal_verified_climb(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            result, repo, experiment = self.run_climb(Path(raw), "staircase", rounds=4)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads(result.stdout)["result"]
+            self.assertEqual(receipt["status"], "promoted")
+            self.assertEqual(receipt["rounds_completed"], 4)
+            self.assertEqual(receipt["counts"]["candidates"], 20)
+            self.assertEqual(receipt["counts"]["kept"], 4)
+            self.assertEqual(receipt["baseline"]["score"], 0)
+            self.assertEqual(receipt["incumbent"]["score"], 20)
+            self.assertEqual((repo / "solution.txt").read_text().strip(), "20")
+            report = (experiment / "report.svg").read_text(encoding="utf-8")
+            self.assertIn("4 rounds. 4 verified climbs.", report)
+            self.assertIn("ROUND 4", report)
+            ET.fromstring(report)
 
     def assert_ledger_chain(self, experiment: Path) -> None:
         previous = None
@@ -124,7 +144,7 @@ class HillClimberTests(unittest.TestCase):
                 self.assertTrue(report.is_file())
                 report_text = report.read_text(encoding="utf-8")
                 self.assertIn("Hill Climber result: promoted", report_text)
-                self.assertIn("DEVELOPMENT SCORE TRAJECTORY", report_text)
+                self.assertIn("VERIFIED HILL-CLIMB TRAJECTORY", report_text)
                 self.assertIn("DEV WINNER", report_text)
                 self.assertIn("PROMOTED", report_text)
                 ET.parse(report)
@@ -372,6 +392,30 @@ class HillClimberTests(unittest.TestCase):
                 hashlib.sha256((BENCHMARK / "results" / "report.svg").read_bytes()).hexdigest(),
             )
             ET.parse(BENCHMARK / "results" / "report.svg")
+
+    def test_disclosed_protocol_receipt_is_internally_verified(self) -> None:
+        results = PROTOCOL_BENCHMARK / "results"
+        receipt = json.loads((results / "receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["status"], "promoted")
+        self.assertEqual(receipt["rounds_completed"], 4)
+        self.assertEqual(receipt["counts"], {
+            "candidates": 20, "crashed": 0, "invalid": 0, "kept": 4, "rejected": 16,
+        })
+        self.assertEqual(receipt["baseline"]["score"], 0)
+        self.assertEqual(receipt["incumbent"]["score"], 20)
+        for key, filename in (("ledger", "events.jsonl"), ("manifest", "manifest.json")):
+            digest = hashlib.sha256((results / filename).read_bytes()).hexdigest()
+            self.assertEqual(receipt["evidence"][key]["sha256"], digest)
+        self.assertEqual(
+            receipt["patch"]["sha256"], hashlib.sha256((results / "winner.patch").read_bytes()).hexdigest(),
+        )
+        report = results / "report.svg"
+        self.assertEqual(receipt["report"]["sha256"], hashlib.sha256(report.read_bytes()).hexdigest())
+        report_text = report.read_text(encoding="utf-8")
+        self.assertIn("4 rounds. 4 verified climbs.", report_text)
+        self.assertIn("ROUND 4", report_text)
+        ET.parse(report)
+        self.assert_ledger_chain(results)
 
 
 if __name__ == "__main__":

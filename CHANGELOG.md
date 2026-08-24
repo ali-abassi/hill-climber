@@ -2,6 +2,11 @@
 
 ## 0.3.0 — 2026-08-24
 
+- Replaced the one-jump README hero with a disclosed four-round protocol
+  receipt that plots 20 candidates, four strict keeps, rejected routes, and the
+  verified incumbent staircase from `0 → 5 → 10 → 15 → 20`.
+- Added a calibrated LLM-judge contract for hill-climbing logos and other
+  subjective artifacts without presenting a single model verdict as truth.
 - Replaced the abstract route mark with a generated human rock-climber emblem,
   delivered as a real transparent PNG and validated on light and dark surfaces
   from 32 to 144 pixels.

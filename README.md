@@ -20,9 +20,9 @@
     <a href="SKILL.md">Agent skill</a>
   </p>
 
-  <img src="benchmarks/duration/results/report.svg" width="100%" alt="A real Hill Climber benchmark report plotting five candidate scores, the round incumbent, selected development winner, private holdout promotion, token usage, and saved patch state">
+  <img src="benchmarks/protocol/results/report.svg" width="100%" alt="A four-round Hill Climber report showing twenty candidate attempts and four evidence-backed steps from baseline to the promoted summit">
 
-  <p><sub>Real Codex run: 14/19 → 19/19 development cases; 4/12 → 12/12 unseen holdout cases. One disclosed smoke benchmark—not a general performance claim.</sub></p>
+  <p><sub>Deterministic protocol receipt: 20 isolated candidates across four rounds; verified incumbent 0 → 5 → 10 → 15 → 20. The real Codex benchmark remains disclosed below.</sub></p>
 </div>
 
 ## Why does this exist?
@@ -58,9 +58,10 @@ capacity. Real output:
 ```text
 Hill Climber demo
 status: promoted
-candidates: 5
+candidates: 20
+rounds: 4
 baseline: 0
-final: 5
+final: 20
 holdout: promoted
 applied: yes
 report: generated
@@ -141,10 +142,12 @@ Interrupted rounds reuse committed artifacts. If interruption happens after
 the holdout begins, that holdout is closed and never replayed.
 
 Every completed experiment writes a self-contained `report.svg` from the same
-hash-chained evidence as `receipt.json`. The graph plots every evaluated
-candidate, marks the development winner, and draws the round-by-round incumbent
-as a step line. Retained and holdout-reverted runs get the same report without
-being presented as successes.
+hash-chained evidence as `receipt.json`. The graph groups every evaluated
+candidate by round, preserves rejected routes, and draws each strict incumbent
+gain as the thick green best-verified staircase. Retained and holdout-reverted
+runs get the same report without being presented as successes. The README hero
+is a [four-round deterministic protocol receipt](benchmarks/protocol); it is not
+presented as model performance.
 
 ## Benchmark receipt
 
@@ -152,6 +155,8 @@ The repository includes one small, disclosed smoke benchmark: repair an
 incomplete compound-duration parser without editing its evaluator. It was run
 with the real Codex SDK—not the deterministic demo generator—using
 `gpt-5.6-terra`, medium reasoning, five candidates, one round, and `--no-apply`.
+
+<img src="benchmarks/duration/results/report.svg" width="100%" alt="The disclosed real Codex smoke benchmark showing five candidate scores, one selected development winner, and private holdout promotion">
 
 | Measurement | Untouched baseline | Selected patch |
 |---|---:|---:|
@@ -217,6 +222,15 @@ not been certified.
 Do not use Hill Climber when quality cannot be scored externally, the target
 repository is dirty, evaluator commands are untrusted, or the necessary edit
 surface cannot be bounded.
+
+### Logos and other subjective artifacts
+
+Hill Climber can optimize a logo, design, prompt, or other subjective artifact
+when the evaluator is made explicit rather than treated as taste-by-vibes. Pair
+mechanical gates—format, alpha, crop, required sizes, and surface contrast—with
+a versioned, calibrated LLM judge. Run judgments in clean context, aggregate
+repeats, calibrate against human labels, and reserve fresh contexts for final
+promotion. See the complete [LLM-judged visual climb protocol](docs/llm-judged-visuals.md).
 
 ## Under the hood
 
