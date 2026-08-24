@@ -18,6 +18,7 @@ CLI = ROOT / "bin" / "hill-climber"
 FAKE_SDK = ROOT / "tests" / "fixtures" / "fake_codex_sdk.mjs"
 EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 ENV_PROBE_EVALUATOR = ROOT / "tests" / "fixtures" / "env_probe_evaluator.py"
+MULTIFILE_EVALUATOR = ROOT / "tests" / "fixtures" / "multifile_evaluator.py"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
 INVALID_FEEDBACK_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_feedback_evaluator.py"
 FAILING_EVALUATOR = ROOT / "tests" / "fixtures" / "failing_climb_evaluator.py"
@@ -219,6 +220,98 @@ class HillClimberTests(unittest.TestCase):
             baseline_repeat = experiment / "evaluations" / "baseline" / "development" / "repeat-1.json"
             payload = json.loads(baseline_repeat.read_text(encoding="utf-8"))
             self.assertEqual(payload["details"], "probe=reached secret=MISSING")
+
+    def test_multi_file_candidate_is_promoted_as_one_unit_and_boundary_still_holds(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo = root / "source"
+            repo.mkdir()
+            git(repo, "init", "-q")
+            git(repo, "config", "user.name", "Fixture")
+            git(repo, "config", "user.email", "fixture@example.test")
+            (repo / "solution.txt").write_text("0\n", encoding="utf-8")
+            (repo / "helper.txt").write_text("0\n", encoding="utf-8")
+            (repo / "forbidden.txt").write_text("keep\n", encoding="utf-8")
+            git(repo, "add", "solution.txt", "helper.txt", "forbidden.txt")
+            git(repo, "commit", "-qm", "baseline")
+            experiment = root / "experiment"
+            evaluator = shlex.join([str(PRODUCT_PYTHON), str(MULTIFILE_EVALUATOR)])
+            command = [
+                str(PRODUCT_PYTHON), str(CLI), "run", "--workspace", str(repo),
+                "--task", "raise solution.txt and helper.txt together",
+                "--eval", evaluator, "--holdout-eval", evaluator,
+                "--mutable", "solution.txt", "--mutable", "helper.txt",
+                "--candidates", "2", "--rounds", "1",
+                "--out", str(experiment), "--json", "--no-apply",
+            ]
+            result = subprocess.run(command, cwd=repo, env=self.environment(root, "multifile"),
+                                    text=True, capture_output=True, timeout=90, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads((experiment / "receipt.json").read_text(encoding="utf-8"))
+
+            # The surviving candidate changed both declared files as one patch.
+            self.assertEqual(receipt["incumbent"]["complexity"]["files"], 2)
+            patch = (experiment / "winner.patch").read_text(encoding="utf-8")
+            self.assertIn("solution.txt", patch)
+            self.assertIn("helper.txt", patch)
+            self.assertNotIn("forbidden.txt", patch)
+
+            # The candidate that also wrote outside every glob was refused,
+            # even though one of its two edits was legitimate.
+            self.assertGreaterEqual(receipt["counts"]["invalid"], 1)
+            self.assertEqual((repo / "forbidden.txt").read_text(encoding="utf-8"), "keep\n")
+
+    def test_repository_tracked_holdout_is_refused_before_any_candidate_spend(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo = self.make_repo(root)
+            # A holdout committed inside the source repository is visible to every
+            # candidate, because each candidate worktree is a full clone.
+            insider = repo / "holdout_evaluator.py"
+            insider.write_text(
+                (ENV_PROBE_EVALUATOR).read_text(encoding="utf-8"), encoding="utf-8")
+            git(repo, "add", "holdout_evaluator.py")
+            git(repo, "commit", "-qm", "holdout inside repo")
+            experiment = root / "experiment"
+            command = [
+                str(PRODUCT_PYTHON), str(CLI), "run", "--workspace", str(repo),
+                "--task", "noop",
+                "--eval", shlex.join([str(PRODUCT_PYTHON), str(ENV_PROBE_EVALUATOR)]),
+                "--holdout-eval", shlex.join([str(PRODUCT_PYTHON), str(insider)]),
+                "--mutable", "solution.txt", "--candidates", "1",
+                "--out", str(experiment), "--json", "--no-apply",
+            ]
+            result = subprocess.run(command, cwd=repo, env=self.environment(root, "easy"),
+                                    text=True, capture_output=True, timeout=30, check=False)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["error"]["code"], "E_HOLDOUT_EXPOSED")
+            self.assertIn("holdout_evaluator.py", payload["error"]["message"])
+            # Refused before spending a single candidate turn.
+            self.assertFalse((experiment / "candidates").exists())
+
+    def test_identical_development_and_holdout_commands_are_recorded_as_dependent(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo = self.make_repo(root)
+            experiment = root / "experiment"
+            same = shlex.join([str(PRODUCT_PYTHON), str(EVALUATOR), "easy", "development"])
+            command = [
+                str(PRODUCT_PYTHON), str(CLI), "run", "--workspace", str(repo),
+                "--task", "noop", "--eval", same, "--holdout-eval", same,
+                "--mutable", "solution.txt", "--candidates", "1",
+                "--out", str(experiment), "--json", "--no-apply",
+            ]
+            result = subprocess.run(command, cwd=repo, env=self.environment(root, "easy"),
+                                    text=True, capture_output=True, timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            receipt = json.loads((experiment / "receipt.json").read_text(encoding="utf-8"))
+            # The promotion is real, but the receipt must not imply it was
+            # verified against independent evidence.
+            self.assertIs(receipt["promotion"]["holdout_independent"], False)
+            self.assertIn("holdout command is identical", result.stderr)
+            # An inert repeat-robustness gate must also be disclosed.
+            self.assertIn("noise can be promoted", result.stderr)
 
     def test_dirty_repository_is_rejected_before_experiment_creation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

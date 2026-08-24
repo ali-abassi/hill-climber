@@ -17,6 +17,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -610,6 +611,7 @@ function createContext(request) {
     details: String(request.details ?? "").trim(),
     eval_argv: request.eval_argv,
     holdout_argv: request.holdout_argv,
+    holdout_independent: JSON.stringify(request.eval_argv) !== JSON.stringify(request.holdout_argv),
     setup_argv: request.setup_argv ?? [],
     extra_env: normalizeExtraEnv(request.env),
     mutable: request.mutable.map(normalizePath),
@@ -1306,6 +1308,7 @@ async function promotion(context) {
   const result = {
     verdict: passed ? "promoted" : "reverted",
     holdout_used: true,
+    holdout_independent: context.config.holdout_independent !== false,
     baseline: holdoutBaseline,
     candidate: holdoutCandidate,
     delta,
@@ -1626,8 +1629,70 @@ function makeReceipt(context, promotionResult, patchPath) {
   return receipt;
 }
 
+// A holdout only proves generalization if candidates cannot read it and it is
+// not literally the development evaluator. Neither property was enforced, so a
+// repository-tracked holdout, or an identical dev/holdout command, could still
+// report `promoted`. These checks run before any candidate is generated.
+function assertEvaluatorHygiene(context) {
+  const config = context.config;
+  const workspace = context.manifest.source.workspace;
+
+  const tracked = new Set(
+    gitText(workspace, ["ls-files", "-z"]).split("\0").filter(Boolean),
+  );
+
+  // Compare canonical paths: on macOS a temp workspace resolves through the
+  // /var -> /private/var symlink, and a lexical compare would treat an
+  // in-repository holdout as outside the repository.
+  const canonical = (path) => {
+    try { return realpathSync(path); } catch { return resolve(path); }
+  };
+  const canonicalWorkspace = canonical(workspace);
+
+  const exposed = [];
+  for (const argument of config.holdout_argv) {
+    if (typeof argument !== "string" || !argument) continue;
+    const argumentPath = isAbsolute(argument) ? argument : resolve(workspace, argument);
+    if (!existsSync(argumentPath)) continue;
+    const relativeToWorkspace = relative(canonicalWorkspace, canonical(argumentPath));
+    if (relativeToWorkspace && !relativeToWorkspace.startsWith("..") &&
+        !isAbsolute(relativeToWorkspace) &&
+        tracked.has(normalizePath(relativeToWorkspace))) {
+      exposed.push(normalizePath(relativeToWorkspace));
+    }
+  }
+  if (exposed.length) {
+    throw new ClimbError("E_HOLDOUT_EXPOSED",
+      `holdout evaluator is tracked inside the source repository: ${exposed.join(", ")}`, 2,
+      { next_action: "move the holdout evaluator and its data outside the repository, then rerun" });
+  }
+
+  const suspicious = [...tracked].filter((path) => /holdout/i.test(path)).sort();
+  if (suspicious.length) {
+    progress(config, "WARNING",
+      `${suspicious.length} tracked path(s) match "holdout" and are visible to every candidate: ` +
+      `${bounded(suspicious.join(", "), 300)}`);
+  }
+
+  if (!config.holdout_independent) {
+    progress(config, "WARNING",
+      "holdout command is identical to the development command; promotion cannot detect overfitting");
+  }
+
+  // With a single repeat, low === high === score, so the repeat-robustness gate
+  // (candidate.low >= incumbent.low) carries no variance information and any
+  // positive delta promotes -- including measurement noise.
+  if (config.repeats <= 1 || config.holdout_repeats <= 1) {
+    progress(config, "WARNING",
+      `repeats=${config.repeats} holdout_repeats=${config.holdout_repeats} min_gain=${config.min_gain}: ` +
+      "the repeat-robustness gate is inert and noise can be promoted; " +
+      "for timing evaluators use --repeats 3+ --holdout-repeats 3+ and a --min-gain above your noise floor");
+  }
+}
+
 async function execute(context) {
   await assertRuntime(context);
+  assertEvaluatorHygiene(context);
   progress(context.config, "CLIMB", `${context.experiment} task=${context.config.task}`);
   context.state.status = "searching";
   await baseline(context);

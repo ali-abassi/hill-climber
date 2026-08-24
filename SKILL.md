@@ -31,8 +31,14 @@ Never let a candidate:
 3. Turn the user's goal into one concise `--task` and put detailed constraints
    in a versioned or separately preserved details file.
 4. Define a deterministic development evaluator and a genuinely unseen
-   holdout evaluator. Keep both outside all mutable paths; keep the holdout
-   outside the repository whenever possible.
+   holdout evaluator. Keep both outside all mutable paths, and keep the
+   holdout **outside the repository** — every candidate worktree is a full
+   clone, so a tracked holdout is readable by every candidate. A holdout
+   evaluator tracked in the source repository is refused with
+   `E_HOLDOUT_EXPOSED`; other tracked paths matching `holdout` are reported
+   as a warning. Passing the same command to `--eval` and `--holdout-eval`
+   is allowed but records `promotion.holdout_independent: false`, because
+   such a run cannot detect overfitting.
 5. Require evaluator stdout to be exactly one JSON object with finite numeric
    `score`, boolean `gates`, and optional bounded `details`, `metrics`, and
    `feedback`. Feedback is a string or string array containing actionable
@@ -40,7 +46,18 @@ Never let a candidate:
 6. Select the narrowest repository-relative `--mutable` globs that can solve
    the task.
 7. Choose explicit wall, token, failure, plateau, target, and repeat budgets.
-8. Prefer `--no-apply` for a user's first experiment or any uncertain task.
+8. Keep evaluator output files out of the source repository, or `.gitignore`
+   them. Anything an evaluator writes into the workspace makes it dirty and
+   the next run stops with `E_DIRTY`.
+9. Match repeats to evaluator noise. With `--repeats 1` the per-evaluation
+   `low`/`high` collapse to the single score, so the repeat-robustness gate
+   carries no variance information and any positive delta can be promoted —
+   including measurement noise. For timing, memory, or any other noisy
+   metric use `--repeats 3` or more, `--holdout-repeats 3` or more, and a
+   `--min-gain` set above the noise floor you measured on the baseline.
+   Reducing noise inside the evaluator (for example reporting a median of
+   several runs) compounds with this and is usually worth it.
+10. Prefer `--no-apply` for a user's first experiment or any uncertain task.
 
 ## Launch
 

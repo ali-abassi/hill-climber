@@ -9,6 +9,7 @@ const PLANS = {
   slowholdout: [1, 5, 2, 3, 4],
   mixed: [1, 5, 2, 3, 4],
   staircase: [2, 5, 1, 4, 3],
+  multifile: [2, 9, 1, 4, 3],
 };
 
 export class Codex {
@@ -37,6 +38,15 @@ export class Codex {
         const incumbent = Number(readFileSync(join(options.workingDirectory, "solution.txt"), "utf8").trim());
         const value = scenario === "staircase" ? incumbent + planValue : planValue;
         writeFileSync(join(options.workingDirectory, "solution.txt"), `${value}\n`, "utf8");
+        if (scenario === "multifile") {
+          // The first candidate improves two declared-mutable files together.
+          // The second also edits a path outside every --mutable glob, which
+          // must be refused even though one of its edits was legitimate.
+          writeFileSync(join(options.workingDirectory, "helper.txt"), `${value + 1}\n`, "utf8");
+          if (index === 1) {
+            writeFileSync(join(options.workingDirectory, "forbidden.txt"), "escaped\n", "utf8");
+          }
+        }
         if (index === 0) {
           const cache = join(options.workingDirectory, "__pycache__");
           mkdirSync(cache, { recursive: true });

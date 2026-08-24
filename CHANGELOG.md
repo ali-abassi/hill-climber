@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Refused a holdout evaluator tracked inside the source repository with
+  `E_HOLDOUT_EXPOSED`, before any candidate is generated. Every candidate
+  worktree is a full clone, so a tracked holdout was readable by every
+  candidate while the receipt still reported an independent promotion. Other
+  tracked paths matching `holdout` now raise a warning.
+- Recorded `promotion.holdout_independent` in the receipt, and warned at
+  launch, when `--eval` and `--holdout-eval` are the same command. Such a run
+  cannot detect overfitting, so it must not read as independently verified.
+- Warned when `--repeats` or `--holdout-repeats` is 1, because the
+  repeat-robustness gate compares `low` values that collapse to the single
+  score, letting measurement noise be promoted on a noisy metric. Documented
+  noise floors, repeats, and `--min-gain` in README and SKILL.md.
+- Added multi-file coverage: a candidate spanning two declared-mutable files is
+  promoted as one patch, while a candidate that also writes outside every glob
+  is still refused. Previously every test and benchmark was single-file.
+- Documented that evaluator output written into the workspace makes it dirty and
+  stops the next run with `E_DIRTY`.
 - Added `--env KEY=VAL` (repeatable) so setup, evaluator, and holdout-evaluator
   commands can receive exactly the extra environment variables they need.
   Still additive on top of the fixed sanitized environment; the parent

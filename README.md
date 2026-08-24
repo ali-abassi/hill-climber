@@ -137,9 +137,14 @@ information for later rounds; it may be one string or an array of strings.
 4. **Grade away from the agent.** Commit the candidate, remove its generation
    worktree, then evaluate that commit in a separate detached worktree.
 5. **Choose one strict gain.** Gates, score, repeat floor, changed-line count,
-   and stable candidate ID determine one deterministic round winner.
+   and stable candidate ID determine one deterministic round winner. The
+   repeat floor compares the worst repeat of the candidate against the worst
+   repeat of the incumbent, so it only carries information when `--repeats`
+   is above 1 — see [noise floors](#noise-floors-and-repeats).
 6. **Verify the summit once.** After search ends, compare baseline and winner on
-   the private holdout. A regression retains the baseline.
+   the private holdout. A regression retains the baseline. Candidate worktrees
+   are full clones, so a holdout evaluator tracked inside the repository is
+   refused up front with `E_HOLDOUT_EXPOSED`.
 7. **Apply only after promotion.** With `--apply`, the controller patches the
    still-clean source only after holdout success.
 
@@ -154,6 +159,27 @@ best-verified staircase. Retained and holdout-reverted runs get the same report
 without being presented as successes. The README hero is a
 [four-round deterministic protocol receipt](benchmarks/protocol); it is not
 presented as model performance.
+
+## Noise floors and repeats
+
+The strict-gain gate compares the worst repeat of a candidate against the worst
+repeat of the incumbent. With the default `--repeats 1`, a single measurement
+means `low`, `high`, and `score` are the same number, that comparison carries no
+variance information, and any positive delta can win — including measurement
+noise. That default is fine for a deterministic evaluator (exit status, byte
+size, a counted result) and wrong for a noisy one.
+
+For wall time, memory, or anything else that varies run to run:
+
+| Do | Why |
+|---|---|
+| `--repeats 3` or more | Gives `low`/`high` real spread so the repeat floor can reject a lucky run |
+| `--holdout-repeats 3` or more | Same protection on the one-time promotion decision |
+| `--min-gain <above your noise floor>` | Measure the baseline a few times first, then require more than that spread |
+| Report a median inside the evaluator | Compounds with `--repeats`; cheap and usually worth it |
+
+A run that leaves these at their defaults on a timing metric prints a warning
+saying so. Treat a sub-noise "gain" as unproven no matter what the receipt says.
 
 ## Benchmark receipt
 
