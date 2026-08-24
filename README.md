@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.svg" width="124" alt="Hill Climber: a human rock climber reaching upward on a steep rock face">
+  <img src="assets/logo.png" width="144" alt="Hill Climber: a human rock climber reaching upward on a steep rock face">
 
   <h1>Turn code changes into measured experiments.</h1>
 

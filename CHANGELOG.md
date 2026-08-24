@@ -2,8 +2,9 @@
 
 ## 0.3.0 — 2026-08-24
 
-- Replaced the abstract route mark with a human rock-climber logo that remains
-  readable at repository-icon size.
+- Replaced the abstract route mark with a generated human rock-climber emblem,
+  delivered as a real transparent PNG and validated on light and dark surfaces
+  from 32 to 144 pixels.
 - Rebuilt every generated run report around an empirical score trajectory:
   candidate results, round incumbents, selected patch, holdout verdict, usage,
   and application state.
