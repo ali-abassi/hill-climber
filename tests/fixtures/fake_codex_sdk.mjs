@@ -18,7 +18,7 @@ export class Codex {
   startThread(options) {
     return {
       async runStreamed(prompt, { signal }) {
-        const delay = Number(process.env.CODEX_CLIMB_FAKE_DELAY_MS ?? 0);
+        const delay = Number(process.env.HILL_CLIMBER_FAKE_DELAY_MS ?? 0);
         if (delay > 0) {
           await new Promise((resolve, reject) => {
             const timer = setTimeout(resolve, delay);
@@ -30,7 +30,7 @@ export class Codex {
         }
         const match = prompt.match(/candidate (\d+)\/\d+/i);
         const index = Number(match?.[1] ?? 1) - 1;
-        const scenario = process.env.CODEX_CLIMB_FAKE_SCENARIO ?? "easy";
+        const scenario = process.env.HILL_CLIMBER_FAKE_SCENARIO ?? "easy";
         const value = (PLANS[scenario] ?? PLANS.easy)[index];
         writeFileSync(join(options.workingDirectory, "solution.txt"), `${value}\n`, "utf8");
         if (index === 0) {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — 2026-08-24
+
+- Renamed the project, repository, package, CLI, skill, schemas, and local state
+  namespace to Hill Climber.
+- Added an original two-color summit-route logo and a rendered GitHub hero that
+  explains five-candidate selection and private-holdout promotion.
+- Rebuilt the README around a verified quickstart, real receipts, progressive
+  disclosure, honest alternatives, and explicit security boundaries.
+
 ## 0.1.0 — 2026-08-24
 
 - Initial standalone public release.

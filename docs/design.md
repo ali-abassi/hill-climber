@@ -1,6 +1,6 @@
 # Codex hill-climb design notes
 
-`codex-climb` is a clean-room implementation of a small experimental protocol,
+`hill-climber` is a clean-room implementation of a small experimental protocol,
 not a port of another agent. The source survey was performed on 2026-08-24 and
 used current repository code and documentation, not star counts alone.
 
@@ -33,7 +33,7 @@ used current repository code and documentation, not star counts alone.
 AutoAgent and autoresearch advertised MIT in prose at the inspected revisions
 but had no repository license file. No source was copied from either project.
 
-## Decisions carried into `codex-climb`
+## Decisions carried into `hill-climber`
 
 | Survey lesson | Enforced mechanism |
 |---|---|

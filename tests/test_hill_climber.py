@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = ROOT / "bin" / "codex-climb"
+CLI = ROOT / "bin" / "hill-climber"
 FAKE_SDK = ROOT / "tests" / "fixtures" / "fake_codex_sdk.mjs"
 EVALUATOR = ROOT / "tests" / "fixtures" / "evaluate_climb_fixture.py"
 INVALID_EVALUATOR = ROOT / "tests" / "fixtures" / "invalid_climb_evaluator.py"
@@ -29,7 +29,7 @@ def git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-class CodexHillClimbTests(unittest.TestCase):
+class HillClimberTests(unittest.TestCase):
     def make_repo(self, root: Path) -> Path:
         repo = root / "source"
         repo.mkdir()
@@ -50,8 +50,8 @@ class CodexHillClimbTests(unittest.TestCase):
         return {
             **os.environ,
             "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
-            "CODEX_CLIMB_CODEX_MODULE": str(FAKE_SDK),
-            "CODEX_CLIMB_FAKE_SCENARIO": scenario,
+            "HILL_CLIMBER_CODEX_MODULE": str(FAKE_SDK),
+            "HILL_CLIMBER_FAKE_SCENARIO": scenario,
             "TOP_SECRET_FOR_CLIMB": "must-not-reach-candidate-shells",
             "NO_COLOR": "1",
         }
@@ -165,7 +165,7 @@ class CodexHillClimbTests(unittest.TestCase):
                 "--generation-parallel", "1", "--out", str(experiment), "--json",
             ]
             environment = self.environment(root, "easy")
-            environment["CODEX_CLIMB_FAKE_DELAY_MS"] = "10000"
+            environment["HILL_CLIMBER_FAKE_DELAY_MS"] = "10000"
             process = subprocess.Popen(command, cwd=repo, env=environment, text=True,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             deadline = time.monotonic() + 20
@@ -266,7 +266,7 @@ class CodexHillClimbTests(unittest.TestCase):
                     codex.write_text("#!/bin/sh\nprintf '%s\\n' 'Not logged in'\nexit 1\n", encoding="utf-8")
                     codex.chmod(0o755)
                 elif case == "sdk":
-                    environment["CODEX_CLIMB_CODEX_MODULE"] = str(root / "missing-sdk.mjs")
+                    environment["HILL_CLIMBER_CODEX_MODULE"] = str(root / "missing-sdk.mjs")
                 evaluator_path = (INVALID_EVALUATOR if case == "evaluator" else
                                   FAILING_EVALUATOR if case == "evaluator_exit" else EVALUATOR)
                 evaluator = shlex.join([str(PRODUCT_PYTHON), str(evaluator_path), "easy", "development"])

@@ -1,6 +1,6 @@
 # Security model
 
-`codex-climb` narrows and records autonomous code changes; it is not an
+`hill-climber` narrows and records autonomous code changes; it is not an
 OS-level sandbox.
 
 ## Trust boundary

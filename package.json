@@ -1,27 +1,27 @@
 {
-  "name": "codex-hill-climb",
-  "version": "0.1.0",
-  "description": "Bounded five-candidate Codex SDK hill climbs for Git repositories",
+  "name": "hill-climber",
+  "version": "0.2.0",
+  "description": "Five isolated Codex routes. One holdout-verified patch.",
   "license": "MIT",
   "author": "Ali Abassi",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ali-abassi/codex-hill-climb.git"
+    "url": "git+https://github.com/ali-abassi/hill-climber.git"
   },
-  "homepage": "https://github.com/ali-abassi/codex-hill-climb#readme",
+  "homepage": "https://github.com/ali-abassi/hill-climber#readme",
   "bugs": {
-    "url": "https://github.com/ali-abassi/codex-hill-climb/issues"
+    "url": "https://github.com/ali-abassi/hill-climber/issues"
   },
   "bin": {
-    "codex-climb": "./bin/codex-climb"
+    "hill-climber": "./bin/hill-climber"
   },
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "test": "python3 -m unittest -v tests.test_codex_hill_climb",
-    "check": "node --check scripts/codex_hill_climb.mjs && python3 -m py_compile bin/codex-climb tests/test_codex_hill_climb.py && npm test"
+    "test": "python3 -m unittest -v tests.test_hill_climber",
+    "check": "node --check scripts/hill_climber.mjs && python3 -m py_compile bin/hill-climber tests/test_hill_climber.py && npm test"
   },
   "dependencies": {
     "@openai/codex-sdk": "0.149.0",

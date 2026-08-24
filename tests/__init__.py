@@ -1,1 +1,1 @@
-"""Codex Hill Climb test suite."""
+"""Hill Climber test suite."""

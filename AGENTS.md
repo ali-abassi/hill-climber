@@ -2,8 +2,8 @@
 
 Read `README.md`, `SKILL.md`, `SECURITY.md`, and `docs/design.md` before editing.
 
-The controller in `scripts/codex_hill_climb.mjs` owns all trusted decisions.
-The Python file in `bin/codex-climb` only parses CLI arguments and forwards one
+The controller in `scripts/hill_climber.mjs` owns all trusted decisions.
+The Python file in `bin/hill-climber` only parses CLI arguments and forwards one
 JSON request. Do not move selection, evaluator interpretation, holdout access,
 or source application into a model prompt.
 

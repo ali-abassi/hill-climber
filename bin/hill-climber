@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTROLLER = ROOT / "scripts" / "codex_hill_climb.mjs"
+CONTROLLER = ROOT / "scripts" / "hill_climber.mjs"
 
 
 def bounded_int(low: int, high: int):
@@ -38,10 +38,10 @@ def add_common(parser: argparse.ArgumentParser, *, experiment: bool = False) -> 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="codex-climb",
+        prog="hill-climber",
         description="Run bounded, evidence-gated Codex SDK hill climbs against a Git repository.",
     )
-    parser.add_argument("--version", action="version", version="codex-climb 0.1.0")
+    parser.add_argument("--version", action="version", version="hill-climber 0.2.0")
     commands = parser.add_subparsers(dest="action", required=True)
 
     run = commands.add_parser("run", help="start a new hill climb")
@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def request_from(args: argparse.Namespace) -> dict[str, object]:
     request: dict[str, object] = {
-        "schema": "codex-hill-climb.v1.request",
+        "schema": "hill-climber.v1.request",
         "action": args.action,
         "json": args.json,
         "quiet": args.quiet,
@@ -112,7 +112,7 @@ def request_from(args: argparse.Namespace) -> dict[str, object]:
     timestamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
     output = Path(args.out).expanduser().resolve() if args.out else (
-        state_home / "codex-climb" / f"{workspace.name}-{timestamp}"
+        state_home / "hill-climber" / f"{workspace.name}-{timestamp}"
     )
     details = args.details or ""
     if args.details_file:

@@ -1,70 +1,86 @@
-# Codex Hill Climb
+<div align="center">
+  <img src="assets/logo.svg" width="112" alt="Hill Climber: five routes converging into one summit path">
 
-Run bounded five-candidate Codex SDK hill climbs against a Git repository.
-Codex proposes changes; a local deterministic controller owns isolation,
-evaluation, selection, recovery, holdout promotion, and source application.
+  <h1>Let five Codex agents compete. Ship only the verified winner.</h1>
 
-It uses the ChatGPT subscription already authenticated by `codex login`. No
-OpenAI API key is required.
+  <p><strong>Hill Climber runs five isolated attempts from the same Git commit, grades every route, verifies one winner on a private holdout, and applies only the promoted patch.</strong></p>
 
-## Why this exists
+  <p>
+    <a href="https://github.com/ali-abassi/hill-climber/actions/workflows/test.yml"><img src="https://github.com/ali-abassi/hill-climber/actions/workflows/test.yml/badge.svg?branch=trunk" alt="Tests"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-32d583.svg" alt="MIT license"></a>
+  </p>
 
-Prompt-only optimization loops ask an agent to edit, test, and decide whether
-its own work is better. `codex-climb` separates those responsibilities:
+  <p>
+    <a href="#quickstart">Quickstart</a> ·
+    <a href="#how-the-climb-works">How it works</a> ·
+    <a href="#commands">Commands</a> ·
+    <a href="#when-to-use-it">When to use it</a> ·
+    <a href="#security-boundary">Security</a> ·
+    <a href="SKILL.md">Agent skill</a>
+  </p>
 
-1. Measure the untouched baseline.
-2. Generate five candidates from the same immutable commit in isolated Git
-   worktrees.
-3. Grade every candidate in a separate detached worktree.
-4. Keep at most one strict development-set improvement.
-5. Run a private holdout once after search ends.
-6. Apply the winner only when the holdout also passes and does not regress.
+  <img src="assets/hero.svg" width="100%" alt="Five isolated Codex candidates leave one immutable baseline, a detached evaluator keeps one, a private holdout verifies it, and only then is the patch promoted">
+</div>
 
-Rejected or invalid candidates never touch the source checkout. Interrupted
-runs resume from durable, hash-chained evidence instead of starting over.
+## Why does this exist?
 
-## Requirements
+Autonomous coding loops often blur the roles that should stay separate:
 
-- macOS or a Linux-like local environment
-- Git
-- Node.js 18 or newer
-- Python 3.9 or newer
-- [Codex CLI](https://developers.openai.com/codex/cli/) authenticated with
-  `codex login`
+- the same agent proposes a change and declares it better;
+- sequential attempts overwrite each other, making comparison unreliable;
+- visible tests become the target, while hidden regressions go unnoticed;
+- interruption means starting over—or guessing what already ran.
 
-## Install
+Hill Climber makes the model the **candidate generator**, not the judge. A local
+controller owns the baseline, isolated worktrees, scoring, selection, budgets,
+private holdout, recovery, and final application.
 
-```bash
-git clone https://github.com/ali-abassi/codex-hill-climb.git
-cd codex-hill-climb
-./install.sh
-codex-climb --help
-```
+## Quickstart
 
-The installer downloads the two pinned Node dependencies and links
-`codex-climb` into `~/.local/bin`. It does not require `sudo`.
-
-To run directly from a checkout instead:
+### Prove the engine locally—no API key or subscription usage
 
 ```bash
+git clone https://github.com/ali-abassi/hill-climber.git
+cd hill-climber
 npm ci
-./bin/codex-climb --help
+./examples/demo.sh
 ```
 
-## Quick start
+Real output from the deterministic demo:
 
-Start with a clean Git repository and deterministic development and holdout
-evaluators:
+```text
+Hill Climber demo
+status: promoted
+candidates: 5
+baseline: 0
+final: 5
+holdout: promoted
+applied: yes
+```
+
+### Install the real CLI
 
 ```bash
-cd /path/to/your-project
-git status --short
-codex login status
+codex login
+./install.sh
+hill-climber --version
+```
 
-codex-climb run \
-  --workspace . \
+```text
+hill-climber 0.2.0
+```
+
+The installer uses the ChatGPT subscription already authenticated by the Codex
+CLI, downloads two pinned Node dependencies, and links `hill-climber` into
+`~/.local/bin`. It does not require an OpenAI API key or `sudo`.
+
+### Run your first climb
+
+```bash
+hill-climber run \
+  --workspace /absolute/path/to/your-repo \
   --task "Make parse_duration strict and support compound durations" \
-  --details-file task.md \
+  --details-file /absolute/path/to/task.md \
   --eval "python3 /absolute/evals/dev_evaluator.py" \
   --holdout-eval "python3 /absolute/private/holdout_evaluator.py" \
   --mutable "src/**/*.py" \
@@ -74,117 +90,129 @@ codex-climb run \
   --no-apply
 ```
 
-`--no-apply` is a good first-run default. The promoted patch and evidence stay
-in the experiment directory for inspection. Omit it when you want a
-holdout-promoted patch applied automatically to the still-clean source tree.
+Start with `--no-apply`. The promoted patch and full evidence stay in the
+experiment directory, while your source checkout remains unchanged.
 
-## Evaluator contract
-
-Both evaluators run with the candidate checkout as their working directory.
-They must print exactly one JSON object:
+Each evaluator runs from a detached candidate checkout and prints exactly one
+JSON object:
 
 ```json
 {
   "score": 0.85,
-  "gates": {
-    "tests": true,
-    "lint": true
-  },
+  "gates": {"tests": true, "lint": true},
   "details": "17 of 20 behavioral cases passed"
 }
 ```
 
-Scores are maximized. Every gate must be a boolean, and every gate must pass.
-Use a granular score when possible: the fraction of behavioral cases passed is
-more useful than a single pass/fail bit.
+Higher scores are better; every gate must pass. Keep holdout code and data
+outside the repository and never reveal its cases through prompts, setup, or
+development diagnostics. See the
+[starter evaluator](examples/binary_command_evaluator.py) for the smallest
+working contract.
 
-Keep holdout code and data outside the candidate repository. Do not mention
-holdout cases in the task, details, setup command, development diagnostics, or
-mutable paths. A starter binary command evaluator is included at
-[`examples/binary_command_evaluator.py`](examples/binary_command_evaluator.py).
+## How the climb works
 
-The evaluator receives these environment variables:
+1. **Measure base camp.** Grade the untouched commit through the same
+   development evaluator path used for candidates.
+2. **Open five routes.** Start five fresh Codex SDK threads—root cause, edge
+   coverage, simplification, alternative design, and adversarial hardening.
+3. **Keep routes isolated.** Each candidate writes to its own Git worktree;
+   authored changes outside `--mutable` invalidate it.
+4. **Grade away from the agent.** Commit the candidate, remove its generation
+   worktree, then evaluate that commit in a separate detached worktree.
+5. **Choose one strict gain.** Gates, score, repeat floor, changed-line count,
+   and stable candidate ID determine one deterministic round winner.
+6. **Verify the summit once.** After search ends, compare baseline and winner on
+   the private holdout. A regression retains the baseline.
+7. **Apply only after promotion.** With `--apply`, the controller patches the
+   still-clean source only after holdout success.
 
-- `CODEX_CLIMB_PHASE`: `development`, `holdout`, or `setup`
-- `CODEX_CLIMB_SEED`: paired-evaluation seed
-- `CODEX_CLIMB_CANDIDATE`: candidate identifier when applicable
+Interrupted rounds reuse committed artifacts. If interruption happens after
+the holdout begins, that holdout is closed and never replayed.
 
-## Operating a run
+## Commands
 
-```bash
-codex-climb status /tmp/duration-climb --json
-codex-climb inspect /tmp/duration-climb --json
-codex-climb inspect /tmp/duration-climb --candidate r01-c03 --json
-codex-climb stop /tmp/duration-climb --json
-codex-climb resume /tmp/duration-climb
-```
+| You want to… | Run |
+|---|---|
+| Start a bounded search | `hill-climber run …` |
+| Verify current state | `hill-climber status EXPERIMENT --json` |
+| Read the receipt | `hill-climber inspect EXPERIMENT --json` |
+| Inspect one route | `hill-climber inspect EXPERIMENT --candidate r01-c03 --json` |
+| Stop after the current safe boundary | `hill-climber stop EXPERIMENT --json` |
+| Continue unfinished work | `hill-climber resume EXPERIMENT` |
 
-Ctrl-C checkpoints the experiment and prints the exact resume command.
-Completed candidates are not regenerated or reevaluated on resume. If an
-interruption occurs after private holdout evaluation begins, that holdout is
-closed and never replayed; the baseline is retained.
+Ctrl-C checkpoints the run and prints the exact resume command. With `--json`,
+stdout contains one machine document while progress stays on stderr.
 
-Each experiment contains:
+## Compatibility
 
-- a frozen manifest and self-hashed state projection;
-- a fsynced, hash-chained event ledger;
-- candidate prompts, Codex SDK traces, patches, and failures;
-- detached development and holdout evaluation records;
-- a terminal receipt describing promotion, application, usage, and stop reason.
+| Surface | Verified |
+|---|---|
+| macOS local CLI | Node 26, Python 3.14, Git, Codex CLI subscription login |
+| GitHub Actions | Ubuntu, Node 20, Python 3.12 |
+| Codex SDK | `@openai/codex-sdk` 0.149.0, pinned |
+| Evaluators | Any trusted local executable that returns the JSON contract |
 
-## Useful controls
+The intended floor is Node 18+, Python 3.9+, Git, and a Codex CLI session that
+reports `Logged in using ChatGPT`. Windows-native and remote/SSH operation have
+not been certified.
 
-```text
---rounds 3                 up to three rounds, five new candidates each
---generation-parallel 3    generate three candidates concurrently
---repeats 3                repeat paired development grading
---holdout-repeats 3        repeat paired private grading
---setup "npm ci"           prepare each isolated worktree
---min-gain 0.05            require a meaningful score increase
---target-score 0.95        stop after reaching the target
---plateau-rounds 2         stop after two non-improving rounds
---max-wall-seconds 3600    total wall-clock budget
---max-tokens 500000        recorded Codex token stopping budget
---max-failures 5           candidate failure circuit breaker
---no-apply                 preserve the winner without touching source
-```
+## When to use it
 
-Five candidates, one round, two concurrent generations, Terra with medium
-reasoning, and finite time/token/failure budgets are the defaults.
+| Choose | When it wins | Tradeoff |
+|---|---|---|
+| **Hill Climber** | You have a measurable code objective, narrow mutable files, and a private regression set | Requires thoughtful evaluators; five candidates consume more subscription capacity |
+| **Manual Codex** | The task is exploratory, subjective, or needs constant human steering | Human owns comparison, rollback, and experiment memory |
+| **autoresearch-style prompt loop** | You want the smallest possible sequential research protocol | The prompt, not an executable controller, owns keep/revert and resume discipline |
+| **A custom eval platform** | You need distributed workers, OS isolation, spend accounting, or organization-wide policy | More infrastructure and integration work |
 
-## Safety model
+Do not use Hill Climber when quality cannot be scored externally, the target
+repository is dirty, evaluator commands are untrusted, or the necessary edit
+surface cannot be bounded.
 
-- The source repository must begin clean.
-- Authored changes outside `--mutable` invalidate a candidate.
-- Candidate Codex threads receive workspace-write sandbox settings, no
-  approvals, no web search, and network disabled through the SDK options.
-- Evaluators execute as ordinary local processes with your user authority.
-- This project is not an OS-level sandbox. Do not run untrusted evaluator or
-  setup commands; use an external sandbox when stronger effect isolation is
-  required.
-- The controller never pushes, merges, deploys, or resets the user's branch.
+## Under the hood
 
-See [SECURITY.md](SECURITY.md) and the [design notes](docs/design.md) for the
-full boundary and research lineage.
+- immutable incumbents and separate Git worktrees;
+- five strategy lanes per default round, with bounded concurrency;
+- detached development grading and a one-time private holdout;
+- repeat seeds, gates, minimum gain, target, plateau, wall, token, and failure
+  budgets;
+- fsynced atomic state plus a hash-chained event ledger;
+- durable prompts, SDK traces, patches, evaluator records, failures, and receipt;
+- environment allowlisting for cached subscription auth without forwarding
+  arbitrary caller secrets;
+- no controller-owned commit to your branch, push, merge, deployment, or
+  destructive reset.
 
-## Tests
+## Evidence
 
-```bash
-npm ci
-npm test
-```
+The committed deterministic suite covers:
 
-The deterministic suite covers easy, medium, and hard five-candidate runs,
-hidden-holdout rejection, interrupted-round recovery, interrupted-holdout
-closure, distinct preflight failures, and evidence tamper rejection.
+- easy, medium, and hard runs with exactly five candidates each;
+- development overfitting rejected by a hidden holdout;
+- interrupted-round recovery without duplicate generation or grading;
+- interrupted holdout closure without replay;
+- distinct dirty-tree, authentication, SDK, and evaluator failures;
+- manifest, state, and ledger tamper rejection.
 
-## Agent use
+The current public CI runs all seven lifecycle tests plus syntax checks and a
+production dependency audit. That evidence validates the controller protocol;
+it does **not** guarantee improvement on an arbitrary repository or evaluator.
 
-[`SKILL.md`](SKILL.md) is a ready-to-load operating skill for coding agents. It
-defines when to use the tool, how to freeze evaluators, how to supervise and
-resume runs, and what evidence is required before accepting a result.
+## Security boundary
 
-## License
+Candidate Codex threads request workspace-only writes, no approvals, no web
+search, and network disabled through SDK options. Mutable Git diffs are checked
+again by the controller.
 
-[MIT](LICENSE). This is a clean-room implementation informed by public design
-patterns; no source was copied from AutoAgent or autoresearch.
+Evaluator and setup commands are different: they are trusted local programs
+that execute with your user authority. Hill Climber is **not an OS-level
+sandbox**. Put unknown repositories, installers, or graders inside a container
+or VM appropriate to their risk. Read [SECURITY.md](SECURITY.md) before using it
+on sensitive code.
+
+## Project
+
+[Agent operating skill](SKILL.md) · [Security](SECURITY.md) ·
+[Design and research](docs/design.md) · [Contributing](CONTRIBUTING.md) ·
+[Changelog](CHANGELOG.md) · [MIT license](LICENSE)

@@ -29,7 +29,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { pathToFileURL } from "node:url";
 import { minimatch } from "minimatch";
 
-const SCHEMA = "codex-hill-climb.v1";
+const SCHEMA = "hill-climber.v1";
 const MAX_CAPTURE_BYTES = 2 * 1024 * 1024;
 // Candidate agents commonly run Python checks. Bytecode is execution debris,
 // not an authored repository change, so prevent it instead of weakening the
@@ -400,7 +400,7 @@ function validateConfig(config) {
       throw new ClimbError("E_USAGE", "at least one mutable glob is required");
     }
   } else if (!config.experiment) {
-    throw new ClimbError("E_USAGE", `codex-climb ${config.action} requires an experiment path`);
+    throw new ClimbError("E_USAGE", `hill-climber ${config.action} requires an experiment path`);
   }
 }
 
@@ -476,15 +476,15 @@ function candidateComplexity(repo, baseline, commit) {
 }
 
 function applyRef(repo, name, commit) {
-  git(repo, ["update-ref", `refs/codex-climb/${name}`, commit]);
+  git(repo, ["update-ref", `refs/hill-climber/${name}`, commit]);
 }
 
 function candidateCommit(worktree, candidateId) {
   git(worktree, ["add", "-A"]);
   git(worktree, ["diff", "--cached", "--check"]);
   const result = git(worktree, [
-    "-c", "user.name=codex-climb", "-c", "user.email=codex-climb@localhost",
-    "commit", "--no-gpg-sign", "-m", `codex-climb candidate ${candidateId}`,
+    "-c", "user.name=hill-climber", "-c", "user.email=hill-climber@localhost",
+    "commit", "--no-gpg-sign", "-m", `hill-climber candidate ${candidateId}`,
   ], { allowFailure: true });
   if (result.status !== 0) {
     throw new ClimbError("E_NO_CHANGE", `candidate ${candidateId} produced no committable change`);
@@ -660,7 +660,7 @@ async function assertRuntime(context) {
       gitText(source.workspace, ["status", "--porcelain=v1", "--untracked-files=normal"])) {
     throw new ClimbError("E_DRIFT", "source repository changed after the experiment was created", 3);
   }
-  if (gitText(context.repo, ["rev-parse", "refs/codex-climb/baseline"]) !== source.head) {
+  if (gitText(context.repo, ["rev-parse", "refs/hill-climber/baseline"]) !== source.head) {
     throw new ClimbError("E_EVIDENCE", "internal baseline ref drifted", 3);
   }
 }
@@ -669,7 +669,7 @@ async function prepareWorktree(context, worktree) {
   if (!context.config.setup_argv.length) return;
   const result = await runProcess(context.config.setup_argv, {
     cwd: worktree,
-    env: sanitizeEnv({ CODEX_CLIMB_PHASE: "setup" }),
+    env: sanitizeEnv({ HILL_CLIMBER_PHASE: "setup" }),
     timeoutSeconds: context.config.eval_timeout_seconds,
     signal: context.abortController.signal,
   });
@@ -693,9 +693,9 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
       const result = await runProcess(argv, {
         cwd: worktree,
         env: sanitizeEnv({
-          CODEX_CLIMB_PHASE: phase,
-          CODEX_CLIMB_SEED: String(seed),
-          CODEX_CLIMB_CANDIDATE: id,
+          HILL_CLIMBER_PHASE: phase,
+          HILL_CLIMBER_SEED: String(seed),
+          HILL_CLIMBER_CANDIDATE: id,
         }),
         timeoutSeconds: context.config.eval_timeout_seconds,
         signal: context.abortController.signal,
@@ -769,7 +769,7 @@ const CANDIDATE_SCHEMA = {
 };
 
 async function loadCodex() {
-  const override = process.env.CODEX_CLIMB_CODEX_MODULE;
+  const override = process.env.HILL_CLIMBER_CODEX_MODULE;
   if (override) {
     const url = override.startsWith("file:") ? override : pathToFileURL(resolve(override)).href;
     return await import(url);
@@ -1352,8 +1352,8 @@ function summaryPayload(context, receipt = null) {
     result: receipt,
     status: context.state,
     next_action: ["promoted", "retained"].includes(context.state.status)
-      ? ["codex-climb", "inspect", context.experiment, "--json"]
-      : ["codex-climb", "resume", context.experiment, "--json"],
+      ? ["hill-climber", "inspect", context.experiment, "--json"]
+      : ["hill-climber", "resume", context.experiment, "--json"],
   };
 }
 
@@ -1381,9 +1381,9 @@ function emitError(config, error, experiment = null) {
   const value = error instanceof ClimbError ? error : new ClimbError("E_INTERNAL", error.message ?? String(error));
   let nextAction = value.details?.next_action ?? null;
   if (!nextAction && experiment && ["E_EVALUATOR", "E_EVALUATOR_OUTPUT", "E_SETUP"].includes(value.code)) {
-    nextAction = `fix the evaluator/setup command, then run codex-climb resume ${experiment}`;
+    nextAction = `fix the evaluator/setup command, then run hill-climber resume ${experiment}`;
   }
-  if (!nextAction && experiment) nextAction = `codex-climb resume ${experiment}`;
+  if (!nextAction && experiment) nextAction = `hill-climber resume ${experiment}`;
   const payload = {
     schema: `${SCHEMA}.response`,
     ok: false,

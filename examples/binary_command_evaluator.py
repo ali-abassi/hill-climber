@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wrap a trusted command as a minimal binary codex-climb evaluator."""
+"""Wrap a trusted command as a minimal binary hill-climber evaluator."""
 
 from __future__ import annotations
 

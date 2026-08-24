@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Hill Climber logo</title>
+  <desc id="desc">Five routes converge into one path that reaches a mountain summit.</desc>
+  <path fill="#17202a" d="M80 12 146 140H14L80 12Z"/>
+  <g fill="none" stroke="#32d583" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M38 128c8-20 19-28 41-39" stroke-width="5"/>
+    <path d="M58 128c5-18 11-27 21-39" stroke-width="5"/>
+    <path d="M80 128V89" stroke-width="5"/>
+    <path d="M102 128c-5-18-11-27-23-39" stroke-width="5"/>
+    <path d="M122 128c-8-20-19-28-43-39" stroke-width="5"/>
+    <path d="M79 89c-7-12-5-22 7-30 11-8 12-18 3-30" stroke-width="9"/>
+  </g>
+  <path fill="#32d583" d="m89 23 10 4-9 5-1-9Z"/>
+</svg>

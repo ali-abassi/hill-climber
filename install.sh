@@ -25,10 +25,10 @@ fi
 cd "${ROOT}"
 npm ci --omit=dev
 mkdir -p "${BIN_DIR}"
-ln -sfn "${ROOT}/bin/codex-climb" "${BIN_DIR}/codex-climb"
+ln -sfn "${ROOT}/bin/hill-climber" "${BIN_DIR}/hill-climber"
 
-printf 'installed codex-climb -> %s\n' "${ROOT}"
-printf 'CLI: %s/codex-climb\n' "${BIN_DIR}"
+printf 'installed hill-climber -> %s\n' "${ROOT}"
+printf 'CLI: %s/hill-climber\n' "${BIN_DIR}"
 if [[ ":${PATH}:" != *":${BIN_DIR}:"* ]]; then
   printf 'note: add %s to PATH\n' "${BIN_DIR}"
 fi

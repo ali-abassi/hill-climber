@@ -9,7 +9,7 @@ from pathlib import Path
 
 scenario = sys.argv[1]
 phase = sys.argv[2]
-if scenario == "mixed" and phase == "development" and os.environ.get("CODEX_CLIMB_CANDIDATE") == "r01-c03":
+if scenario == "mixed" and phase == "development" and os.environ.get("HILL_CLIMBER_CANDIDATE") == "r01-c03":
     print("first candidate evaluator diagnostic", file=sys.stderr)
     print("second deliberately long diagnostic line", file=sys.stderr)
     raise SystemExit(7)

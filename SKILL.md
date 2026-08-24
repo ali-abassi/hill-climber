@@ -1,11 +1,11 @@
 ---
-name: codex-hill-climb
+name: hill-climber
 description: Use when asked to automatically improve a clean Git repository by generating and grading multiple Codex SDK candidates with a private holdout, finite budgets, durable resume, and evidence-backed promotion.
 ---
 
-# Codex Hill Climb
+# Hill Climber
 
-Use `codex-climb` when the user has a measurable repository improvement goal
+Use `hill-climber` when the user has a measurable repository improvement goal
 and wants the search executed automatically. Do not use it for subjective work
 without an external scoring contract, dirty repositories, untrusted evaluator
 commands, or tasks whose necessary edits cannot be bounded by mutable globs.
@@ -26,7 +26,7 @@ Never let a candidate:
 
 ## Preflight
 
-1. Run `codex-climb --version` and `codex login status`.
+1. Run `hill-climber --version` and `codex login status`.
 2. Require `git status --short` to be empty in the target repository.
 3. Turn the user's goal into one concise `--task` and put detailed constraints
    in a versioned or separately preserved details file.
@@ -43,7 +43,7 @@ Never let a candidate:
 ## Launch
 
 ```bash
-codex-climb run \
+hill-climber run \
   --workspace /absolute/path/to/repo \
   --task "<one measurable objective>" \
   --details-file /absolute/path/to/task.md \
@@ -65,12 +65,12 @@ trusted, reproducible dependency command that does not reveal holdout content.
 - Read progress labels on stderr; use `--json` for exactly one machine response
   on stdout.
 - Inspect durable state with
-  `codex-climb status EXPERIMENT --json`.
+  `hill-climber status EXPERIMENT --json`.
 - Inspect one candidate with
-  `codex-climb inspect EXPERIMENT --candidate r01-c03 --json`.
-- Stop gracefully with `codex-climb stop EXPERIMENT --json`.
+  `hill-climber inspect EXPERIMENT --candidate r01-c03 --json`.
+- Stop gracefully with `hill-climber stop EXPERIMENT --json`.
 - After Ctrl-C or recoverable failure, execute the exact emitted
-  `codex-climb resume EXPERIMENT` command. Do not delete evidence or manually
+  `hill-climber resume EXPERIMENT` command. Do not delete evidence or manually
   rerun individual candidate/holdout graders.
 - If holdout started but did not finish, accept the fail-closed retained result;
   never replay or reconstruct that holdout inside the same experiment.
