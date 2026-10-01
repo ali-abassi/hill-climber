@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added `hill-climber ui`: a local workbench with adaptive planning for six
+  artifact types, bounded no-apply command preparation, downloadable briefs,
+  verified result/candidate views, responsive charts, a task guide and a genuine
+  no-model demo. It never launches real model turns from the browser.
+- Reworked assistant and candidate instructions around evaluator validation,
+  small pilots, task-specific checks, development feedback and truthful
+  acceptance. Added six worked task recipes and delivery/command/integrity
+  regression checks; real-model cross-domain quality remains unmeasured.
+
 - Added opt-in `--evaluation-parallel` (1–8, default 1) for independent
   development graders, with isolated worktrees, paired sequential repeats,
   deterministic selection, and serial holdout evaluation. Added a no-model

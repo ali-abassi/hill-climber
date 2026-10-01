@@ -1,161 +1,167 @@
 ---
 name: hill-climber
-description: Use when asked to automatically improve a clean Git repository by generating and grading multiple Codex SDK candidates with a private holdout, finite budgets, durable resume, and evidence-backed promotion.
+description: Improve measurable file-backed artifacts—code, performance, prompts, writing, design, or configuration—through bounded Codex candidate experiments, fixed independent evaluation, private holdout verification, and inspectable evidence.
 ---
 
-# Hill Climber
+<purpose>
+Turn a user's improvement goal into a small, trustworthy experiment. Adapt the
+objective and checks to the artifact, run competing mechanisms, and accept only
+an independently verified gain. The model proposes changes; the controller owns
+isolation, evaluation, ranking, budgets, holdout, application, and recovery.
+</purpose>
 
-Use `hill-climber` when the user has a measurable repository improvement goal
-and wants the search executed automatically. Do not use it for subjective work
-without an external scoring contract, dirty repositories, untrusted evaluator
-commands, or tasks whose necessary edits cannot be bounded by mutable globs.
+<when_to_use>
+Use when the user wants repeated improvement of files in a clean Git repository
+and an external evaluator can distinguish better from worse. Supported surfaces
+include source code, prompts, documents, HTML/CSS/SVG, and configuration.
 
-## Operating contract
+Use a direct edit for a known fix. Use research or human review first when the
+goal has no credible scoring contract. An arbitrary website, image service,
+production system, or account action is not automatically a file-backed task.
+Do not run untrusted evaluators with the user's authority.
+</when_to_use>
 
-The model generates candidates. The controller owns baseline measurement,
-worktree isolation, mutable-path enforcement, evaluator execution, ranking,
-budgets, one-time holdout promotion, application, evidence, and recovery.
+<define_the_experiment>
+1. Inspect the artifact and its consumers. State the desired observable outcome,
+   the things that must remain true, and the narrowest editable paths. Clarify
+   only missing information that changes the objective or authorization.
+2. Choose the route below. Translate “better” into one higher-is-better score and
+   boolean gates. Use granular behavior scores where possible. Do not substitute
+   brevity, keyword counts, or a flattering judge verdict for user success.
+3. Prepare a fixed development evaluator and different, genuinely unseen holdout
+   cases. Keep evaluators outside mutable paths; keep holdout code and data
+   **outside the repository** because candidate worktrees copy the whole repo.
+   Do not expose holdout through setup, prompts, or feedback. Reusing the same
+   command records `holdout_independent: false`; it does not prove generalization.
+4. Measure the untouched artifact before launching. Check score headroom,
+   baseline failures, gate validity, runtime, and noise. Try a known broken
+   artifact against the evaluator: it must lose or fail a gate. Fix a weak
+   evaluator before search, then freeze it for that experiment.
+5. Put the concise objective in `--task`; put audience, inputs/outputs, constraints,
+   scoring meaning, and relevant local checks in `--details-file`. Include only
+   development information. Do not put secrets or private cases there.
+</define_the_experiment>
 
-Never let a candidate:
+<task_routes>
+| Artifact | Primary measure | Non-negotiable gates | Useful feedback |
+|---|---|---|---|
+| Code | Fraction of behavioral cases passed | Compatibility, security, protected test count | Failure classes and observed/expected behavior |
+| Performance | Negative latency or normalized throughput | Equivalent outputs, correctness, resource ceiling | Measured bottleneck, variance, workload category |
+| Prompts | Task success on labeled cases | Output schema, policy priority, grounded claims | Missing policy, boundary or injection failure |
+| Writing | Anchored reader/task rubric | Factual support, required content, word budget | Unclear claim, missing evidence, unusable next action |
+| File-backed design | Anchored visual/task rubric | Responsive layout, accessibility, functionality | Hierarchy, overflow, contrast, interaction failures |
+| Configuration | Passing constraints or successful scenarios | Parse/schema validity, compatibility, safe defaults | Violated constraint, failing environment category |
 
-- see holdout code, data, expected outputs, or diagnostics;
-- edit the evaluators or broaden its own mutable paths;
-- decide whether its result should be kept;
-- bypass a failed gate because its prose sounds convincing;
-- commit, push, merge, deploy, or modify production state.
+Choose one route or a deliberate combined objective; do not add every check to
+every task. Subjective writing/design scores need a versioned rubric, repeat
+judgments, human calibration, and an independent promotion panel. If those are
+missing, report a pilot proxy result and its limits rather than claiming quality.
+</task_routes>
 
-## Preflight
+<runtime_contract>
+Evaluator stdout must be exactly one JSON object:
 
-1. Run `hill-climber --version` and `codex login status`.
-2. Require `git status --short` to be empty in the target repository.
-3. Turn the user's goal into one concise `--task` and put detailed constraints
-   in a versioned or separately preserved details file.
-4. Define a deterministic development evaluator and a genuinely unseen
-   holdout evaluator. Keep both outside all mutable paths, and keep the
-   holdout **outside the repository** — every candidate worktree is a full
-   clone, so a tracked holdout is readable by every candidate. A holdout
-   evaluator tracked in the source repository is refused with
-   `E_HOLDOUT_EXPOSED`; other tracked paths matching `holdout` are reported
-   as a warning. Passing the same command to `--eval` and `--holdout-eval`
-   is allowed but records `promotion.holdout_independent: false`, because
-   such a run cannot detect overfitting.
-5. Require evaluator stdout to be exactly one JSON object with finite numeric
-   `score`, boolean `gates`, and optional bounded `details`, `metrics`, and
-   `feedback`. Feedback is a string or string array containing actionable
-   development diagnostics, never holdout content.
-6. Select the narrowest repository-relative `--mutable` globs that can solve
-   the task.
-7. Choose explicit wall, token, failure, plateau, target, and repeat budgets.
-8. Keep evaluator output files out of the source repository, or `.gitignore`
-   them. Anything an evaluator writes into the workspace makes it dirty and
-   the next run stops with `E_DIRTY`.
-9. Match repeats to evaluator noise. With `--repeats 1` the per-evaluation
-   `low`/`high` collapse to the single score, so the repeat-robustness gate
-   carries no variance information and any positive delta can be promoted —
-   including measurement noise. For timing, memory, or any other noisy
-   metric use `--repeats 3` or more, `--holdout-repeats 3` or more, and a
-   `--min-gain` set above the noise floor you measured on the baseline.
-   Reducing noise inside the evaluator (for example reporting a median of
-   several runs) compounds with this and is usually worth it.
-10. Prefer `--no-apply` for a user's first experiment or any uncertain task.
+```json
+{"score":0.85,"gates":{"valid":true},"details":"17/20 cases passed","metrics":{"passed":17,"total":20},"feedback":["Compound units pass; whitespace normalization fails."]}
+```
 
-## Launch
+`score` is finite numeric, higher is better; `gates` contains booleans and every
+gate must pass. `details`, `metrics`, and `feedback` are optional bounded
+observations. Feedback names actionable development failure classes without
+literal holdout answers. A failed evaluator is not a low-scoring valid result.
+
+Candidate threads have workspace writes, no approvals, no web search, and
+network disabled in SDK options. They may change only declared mutable paths;
+never evaluator code/data, protected checks, Git metadata, or experiment evidence.
+They do not decide what to keep, apply, commit, push, merge, or deploy.
+
+Evaluator and setup programs run with the invoking user's authority: this is
+**not an OS sandbox**. Use a container or VM for unknown code. Commands receive a
+minimal environment. Inherit required variables explicitly with `--env KEY`;
+never put secret values in command strings. Resume needs those keys rehydrated.
+</runtime_contract>
+
+<pilot_then_scale>
+For interactive planning, run `hill-climber ui` and open the printed loopback
+URL. Plan adapts evaluation advice to the task and prepares a quoted terminal
+command; Results reads verified experiment evidence. The workbench makes no
+real model calls. Its labelled demo uses fixed fixtures, not a model service.
+
+Run `hill-climber --version`, `codex login status`, and `git status --short`.
+Require a clean source checkout. Select an available Codex model deliberately
+with `--model`; do not assume a historical default is available on the account.
+
+Start with three candidates, one round, `--no-apply`, explicit limits, and a
+small representative development panel. These are starting limits, not a promise
+of enough tokens/time for every task:
 
 ```bash
 hill-climber run \
   --workspace /absolute/path/to/repo \
-  --task "<one measurable objective>" \
+  --task "<observable improvement while preserving named constraints>" \
   --details-file /absolute/path/to/task.md \
-  --eval "<development evaluator argv>" \
-  --holdout-eval "<private evaluator argv>" \
-  --mutable "src/**/*.py" \
-  --candidates 5 \
-  --rounds 1 \
-  --out /absolute/path/to/experiment \
-  --no-apply
+  --eval "python3 /absolute/evals/development.py" \
+  --holdout-eval "python3 /absolute/private/holdout.py" \
+  --mutable "<narrow repository-relative glob>" \
+  --candidates 3 --rounds 1 --generation-parallel 2 \
+  --candidate-timeout 600 --eval-timeout 120 \
+  --max-wall-seconds 1800 --max-tokens 150000 --max-failures 2 \
+  --out /absolute/path/to/experiment --no-apply
 ```
 
-Quote each evaluator as one shell-style argv string. Use absolute evaluator
-paths. Repeat `--mutable` for multiple surfaces. Add `--setup` only for a
-trusted, reproducible dependency command that does not reveal holdout content.
-Use `--evaluation-parallel N` (1–8, default 1) to overlap independent
-development graders. Keep it at 1 for timing metrics, shared mutable state,
-GPUs, or rate-limited dependencies. Candidate worktrees remain separate;
-paired repeats and final holdout grading remain sequential. In-flight graders
-may finish after a failure threshold is reached; no new graders are queued.
-Evaluator, holdout-evaluator, and setup commands only see a fixed, minimal
-environment (`HOME`, `PATH`, `HILL_CLIMBER_*`, ...) — never the parent shell's
-full environment. Repeat `--env KEY` to inherit exactly the variables an
-evaluator needs (for example an API key), or `--env KEY=VAL` for a non-secret
-literal. Durable state stores names only, never values; resume requires the
-same keys to be rehydrated. Nothing else crosses that boundary.
+Quote evaluator argv as one argument; repeat `--mutable` for multiple surfaces.
+Add trusted, reproducible `--setup` only when needed. Evaluator output must stay
+outside the source checkout or be ignored, or the next run will fail `E_DIRTY`.
 
-## Supervision and recovery
+For deterministic correctness, one repeat can suffice. For timing, memory, or
+stochastic judging, measure baseline variation, use `--repeats 3` and
+`--holdout-repeats 3` or more, and set `--min-gain` above observed noise in the
+score's units. With one repeat the repeat floor carries no variance information.
 
-- Read progress labels on stderr; use `--json` for exactly one machine response
-  on stdout.
-- Inspect durable state with
-  `hill-climber status EXPERIMENT --json`.
-- Inspect one candidate with
-  `hill-climber inspect EXPERIMENT --candidate r01-c03 --json`.
-- Open `EXPERIMENT/report.svg` for the graphical run summary; verify its hash
-  against `receipt.report.sha256` before sharing it as evidence.
-- Stop gracefully with `hill-climber stop EXPERIMENT --json`.
-- After Ctrl-C or recoverable failure, execute the exact emitted
-  `hill-climber resume EXPERIMENT` command. Do not delete evidence or manually
-  rerun individual candidate/holdout graders.
-- If holdout started but did not finish, accept the fail-closed retained result;
-  never replay or reconstruct that holdout inside the same experiment.
-- Completed holdout decisions survive an apply failure and resume without
-  rerunning holdout. Generated and evaluated artifacts must match their ledger
-  records; failed evaluations stay terminal. A stopped or budget-exhausted
-  recovery does not start missing model turns.
-- New experiments charge reported SDK usage as generation completes, including
-  candidates never graded. Interrupted or malformed-response turns retain
-  reported usage and traces; missing usage is never fabricated. Older
-  experiments keep their original accounting mode on resume.
+Keep `--evaluation-parallel 1` for timing, GPUs, shared state, and rate limits;
+raise it to 2–8 only for independent development graders. Repeats within a grader
+and final holdout remain sequential. Wall/token thresholds stop between rounds;
+in-flight candidates can overshoot. Candidate count, round count, and individual
+timeouts bound work more directly. Do not claim a strict aggregate cost cap.
 
-## Acceptance gate
+Scale to five candidates and more rounds only when the pilot's feedback explains
+real, generalizable gains and the measured budget is acceptable. Keep useful
+changes, simplify equal alternatives, and vary mechanisms rather than paraphrase
+the same approach. If score stalls, diagnose the evaluator, missing prerequisites,
+or narrow editable surface before spending more. Do not tune against a disclosed
+holdout: a new experiment after inspection needs fresh private cases.
+</pilot_then_scale>
 
-Accept a result only from the verified receipt, never from candidate text.
-Require all of the following:
+<inspect_and_recover>
+Progress is append-only stderr; `--json` gives one machine response on stdout.
+Use `hill-climber status EXPERIMENT --json` and
+`hill-climber inspect EXPERIMENT --candidate r01-c03 --json` for verified evidence.
+Open `EXPERIMENT/report.svg`; its hash is recorded in `receipt.report.sha256`.
 
-1. `status`/`inspect` verifies manifest, state, and ledger integrity.
-2. The selected candidate has a strict development gain and all gates pass.
-3. The one-time holdout verdict is `promoted`, with no regression or failed
-   gate.
-4. `applied` matches the user's requested `--apply`/`--no-apply` behavior.
-5. The source diff stays entirely inside the declared mutable surface.
-6. The receipt records candidate counts, usage, stop reason, evidence paths,
-   and the generated `report.svg`; the controller response records the next
-   action.
-7. With `--no-apply`, a promoted run still contains `winner.patch` while the
-   source checkout remains clean.
+Use `hill-climber stop EXPERIMENT --json` to stop. After interruption or a
+recoverable failure, run the exact emitted resume command. Keep artifacts and
+ledger intact. Never rerun a holdout manually: an interrupted holdout stays
+closed; a completed holdout decision can resume application without regrading.
+Tampered artifacts fail verification. Stopped/exhausted runs do not launch
+missing model turns. SDK-reported generation usage is counted even for ungraded
+or malformed turns; missing usage is not invented. Legacy runs retain their
+original accounting mode.
+</inspect_and_recover>
 
-If the receipt says `retained`, `blocked`, `invalid`, `crashed`, or reports a
-failed gate, explain the evidence and retain the source baseline. Do not turn a
-failed experiment into a success narrative.
+<accept_and_report>
+Accept only a verified receipt showing strict development gain, passing gates,
+and one-time holdout `promoted`. Check independent holdout status, source diff
+within the mutable surface, counts, usage, stop reason, and evidence paths.
+`applied` must match requested behavior. With `--no-apply`, a promoted run has
+`winner.patch` and the source remains clean. A retained, blocked, invalid, or
+crashed result keeps the baseline; explain the actual reason.
 
-## Evaluator guidance
+Report the observed baseline → selected score, private verdict, gate results,
+application state, usage/runtime, and where to inspect the patch/report. State
+what the evaluator measures and does not measure. Never treat candidate prose,
+a help screen, or a synthetic demo as proof of real-model quality.
 
-- Higher scores are better. Prefer behavioral pass fractions or other granular,
-  deterministic measures over a binary score.
-- Return concise actionable `feedback` when a human could diagnose more from
-  the failure than its scalar score. Later rounds receive it together with the
-  prior mechanism, hypothesis, metrics, and keep/reject verdict.
-- Use paired seeds/repeats when evaluation is noisy.
-- Put non-negotiable correctness, security, compatibility, or test-count
-  conditions in boolean gates.
-- Keep scoring code fixed for the entire experiment.
-- For subjective artifacts, combine deterministic gates with a versioned LLM
-  rubric, clean-context repeated judgments, human-label calibration, and a
-  fresh promotion panel. Follow `docs/llm-judged-visuals.md`; never treat one
-  model verdict as ground truth.
-- A score is only as meaningful as its evaluator. Call out weak proxies and
-  refuse promotion when the evaluator does not measure the stated goal.
-- Treat `--max-tokens` and `--max-wall-seconds` as round-boundary stop
-  thresholds: candidates already in flight can overshoot them. Use candidate
-  count, round count, and per-candidate/evaluator timeouts as hard outer bounds.
-
-For full flags and artifact details, read `README.md`. For security boundaries,
-read `SECURITY.md`.
+Stop when the requested experiment has a verified terminal result and concrete
+handoff. Optional worked recipes and efficacy checks: `docs/task-playbook.md`.
+Optional subjective visual calibration detail: `docs/llm-judged-visuals.md`.
+</accept_and_report>

@@ -77,6 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version="hill-climber 0.4.0")
     commands = parser.add_subparsers(dest="action", required=True)
 
+    ui = commands.add_parser("ui", help="open a local experiment planning and evidence workbench")
+    ui.add_argument("--port", type=bounded_int(1, 65535), default=4388,
+                    help="loopback port (default: 4388)")
+
     run = commands.add_parser("run", help="start a new hill climb")
     add_common(run)
     run.add_argument("--workspace", default=".", help="clean Git repository root")
@@ -194,6 +198,15 @@ def request_from(args: argparse.Namespace) -> dict[str, object]:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.action == "ui":
+        try:
+            return subprocess.run(["node", str(ROOT / "scripts" / "workbench.mjs"),
+                                   str(args.port)], check=False).returncode
+        except FileNotFoundError:
+            print("error: Node.js 18 or newer is required", file=sys.stderr)
+            return 2
+        except KeyboardInterrupt:
+            return 130
     if not CONTROLLER.is_file():
         print(f"error: controller is missing: {CONTROLLER}", file=sys.stderr)
         return 2

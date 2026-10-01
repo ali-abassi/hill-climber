@@ -1,18 +1,47 @@
 <div align="center">
 <img src=".github/repo-icon.png" width="160" alt="Codex Code Optimization — Hill Climber icon" />
 
-# Codex Code Optimization — Hill Climber
+# Hill Climber
 
-**Run bounded code-optimization experiments with the Codex SDK, keeping candidates only when configured checks and measured evidence support promotion.**
+**Turn “make this better” into a measured improvement. Plan experiments for code, prompts, writing, design files, and configuration; keep only independently verified gains.**
 
-[Quickstart](#quickstart) · [How it works](#how-it-works) · [For coding assistants](#for-coding-assistants) · [Limits](#limits-and-verification)
+[Workbench](#local-workbench) · [Quickstart](#quickstart) · [Task playbook](docs/task-playbook.md) · [Agent instructions](SKILL.md)
 
 <img src=".github/repo-flow.svg" width="100%" alt="Freeze the objective → Measure candidates → Keep proven gains" />
 </div>
 
 ## Why use it
 
-Repeatedly asking an agent to improve code makes it hard to tell whether a revision is actually better. Hill Climber gives the experiment a budget and a record.
+Repeatedly asking an agent to improve something makes it hard to tell whether a revision is actually better. Hill Climber gives file-backed experiments a fixed evaluator, a budget, and a record.
+
+## Local workbench
+
+```sh
+npm ci
+python3 bin/hill-climber ui
+```
+
+Open **http://127.0.0.1:4388**. Keep the terminal open; use `--port 4389` if needed.
+
+- **Plan:** choose one of six task types, describe the outcome and constraints,
+  supply trusted development/private evaluator commands, and build a copyable
+  launch command plus a downloadable brief. Recipe changes adapt scoring advice
+  and pilot defaults. All prepared runs use `--no-apply`.
+- **Results:** inspect an absolute experiment directory to see verified scores,
+  candidate mechanisms, development feedback, and the private promotion verdict.
+  Refresh a running experiment to read its latest completed checkpoint.
+- **Guide:** understand the selected task's score, protected gates, useful
+  feedback, and how to prepare genuinely unseen cases.
+- **Try the demo:** run six deterministic fixture candidates with no model call;
+  read the real controller receipt and chart. It is clearly marked as a demo.
+
+Planning and inspecting make no model calls. Running a prepared command in your
+terminal uses your Codex capacity. The workbench does not launch real runs,
+apply patches, or expose remote control. It listens only on loopback and refuses
+foreign origins and hosts. Do not expose it through a proxy or tunnel.
+
+See [the task playbook](docs/task-playbook.md) for evaluator recipes and
+[the workbench design and boundaries](docs/workbench.md) for details.
 
 
 ## Quickstart
@@ -23,10 +52,10 @@ From a fresh clone of this repository, run the following in its root. This first
 python3 bin/hill-climber --help
 ```
 
-Observed output (excerpt) from the local check on 2026-09-05:
+Command overview:
 
 ```text
-usage: hill-climber [-h] [--version] {run,resume,status,stop,inspect} ...
+usage: hill-climber [-h] [--version] {ui,run,resume,status,stop,inspect} ...
 ```
 
 ## How it works
@@ -64,7 +93,11 @@ When the user asks you to install or use this project:
 
 The quickstart inspects the CLI without starting a model run. Optimization needs Node dependencies, Codex access, and a trustworthy objective and evaluator; it cannot make a weak metric meaningful.
 
-The first check above passed locally in 0.07 seconds on macOS. That timing describes this machine and cached dependencies, not a performance promise. No model service was called by the quickstart. Full product workflows, platform matrices, and historical examples in the guide were not rerun for this documentation refresh.
+The local workbench and deterministic controller tests exercise planning,
+inspection, promotion, and recovery without calling a model service. Archived
+model benchmarks and platform matrices in the full guide were not rerun for
+this UI refresh. Instruction delivery tests do not establish model quality
+across every task family.
 
 ## When another tool fits better
 
