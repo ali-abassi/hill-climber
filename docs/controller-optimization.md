@@ -50,17 +50,17 @@ checks winner `r01-c02`, score 5, five evaluated candidates, unchanged source,
 one JSON stdout document, and matching ledger/report hashes.
 
 Three runs per arm on this Mac (Apple arm64, macOS 26.3.1, Node 26.8.1, Python
-3.14.7, Git 2.46.0) produced these initial measurements:
+3.14.7, Git 2.46.0) produced these final committed-code measurements (`cdb6fc4`):
 
 | Controller | Grading concurrency | Raw CLI wall seconds | Median |
 |---|---:|---|---:|
 | Upstream `67e54a3` | 1 | 10.642, 10.333, 10.363 | 10.363s |
-| Optimized | 1 | 10.131, 10.222, 10.086 | 10.131s |
-| Optimized | 5 | 3.740, 3.745, 4.356 | 3.745s |
+| Optimized | 1 | 10.555, 10.170, 10.430 | 10.430s |
+| Optimized | 5 | 4.066, 4.251, 4.032 | 4.066s |
 
-The parallel arm is **2.77× faster than upstream**, reducing runtime by
-**63.9%** for this synthetic I/O-bound task. Serial improvement is approximately
-2.3%, too small to claim a general speedup from these three measurements.
+The parallel arm is **2.55× faster than upstream**, reducing runtime by
+**60.8%** for this synthetic I/O-bound task. Serial timing is within approximately 1% of upstream; no general serial
+speedup is claimed from these three measurements.
 This does not measure model quality, real Codex latency, CPU-bound grading, or
 performance on arbitrary repositories. No model calls are made by this
 benchmark. Evaluator commands are deliberately identical here; the receipt
@@ -86,8 +86,9 @@ artifact tampering, worker draining, exhausted recovery budgets, terminal exit
 codes, lock ownership, and legacy manifest compatibility. The original
 controller and disclosed benchmark checks remain in the suite.
 
-An independent Astra review reproduced additional post-apply and null-response
-gaps before they were fixed; targeted regressions now cover them. Required
+An independent Astra review reproduced post-apply, local-exclusion,
+null-response, and concurrency-fixture gaps before they were fixed; focused
+regressions cover them, and the final review passed the local-exclusion fix. Required
 acceptance is `npm ci`, `npm run check`, and `npm audit --omit=dev`, plus the
 Dogfood task receipt. GitHub CI must verify the pushed revision separately.
 
