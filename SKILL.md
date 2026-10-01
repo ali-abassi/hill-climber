@@ -78,6 +78,11 @@ hill-climber run \
 Quote each evaluator as one shell-style argv string. Use absolute evaluator
 paths. Repeat `--mutable` for multiple surfaces. Add `--setup` only for a
 trusted, reproducible dependency command that does not reveal holdout content.
+Use `--evaluation-parallel N` (1–8, default 1) to overlap independent
+development graders. Keep it at 1 for timing metrics, shared mutable state,
+GPUs, or rate-limited dependencies. Candidate worktrees remain separate;
+paired repeats and final holdout grading remain sequential. In-flight graders
+may finish after a failure threshold is reached; no new graders are queued.
 Evaluator, holdout-evaluator, and setup commands only see a fixed, minimal
 environment (`HOME`, `PATH`, `HILL_CLIMBER_*`, ...) — never the parent shell's
 full environment. Repeat `--env KEY` to inherit exactly the variables an
@@ -101,6 +106,14 @@ same keys to be rehydrated. Nothing else crosses that boundary.
   rerun individual candidate/holdout graders.
 - If holdout started but did not finish, accept the fail-closed retained result;
   never replay or reconstruct that holdout inside the same experiment.
+- Completed holdout decisions survive an apply failure and resume without
+  rerunning holdout. Generated and evaluated artifacts must match their ledger
+  records; failed evaluations stay terminal. A stopped or budget-exhausted
+  recovery does not start missing model turns.
+- New experiments charge reported SDK usage as generation completes, including
+  candidates never graded. Interrupted or malformed-response turns retain
+  reported usage and traces; missing usage is never fabricated. Older
+  experiments keep their original accounting mode on resume.
 
 ## Acceptance gate
 

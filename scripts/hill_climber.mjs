@@ -240,14 +240,16 @@ async function runProcess(argv, options = {}) {
       stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",
     });
-    let stdout = Buffer.alloc(0);
-    let stderr = Buffer.alloc(0);
+    const stdout = { chunks: [], bytes: 0 };
+    const stderr = { chunks: [], bytes: 0 };
     let settled = false;
     let pendingError = null;
+    let killTimer = null;
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       options.signal?.removeEventListener("abort", abort);
       if (error) rejectPromise(error); else resolvePromise(result);
     };
@@ -258,8 +260,10 @@ async function runProcess(argv, options = {}) {
       } catch { child.kill(signal); }
     };
     const abort = () => {
+      if (settled || killTimer) return;
       stop("SIGTERM");
-      setTimeout(() => stop("SIGKILL"), 1000).unref();
+      killTimer = setTimeout(() => stop("SIGKILL"), 1000);
+      killTimer.unref();
     };
     options.signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => {
@@ -267,22 +271,28 @@ async function runProcess(argv, options = {}) {
       abort();
     }, timeoutMs);
     timer.unref();
-    const collect = (current, chunk) => {
-      const next = Buffer.concat([current, chunk]);
-      if (next.length > MAX_CAPTURE_BYTES) {
+    const collect = (capture, chunk) => {
+      if (pendingError || settled) return;
+      if (capture.bytes + chunk.length > MAX_CAPTURE_BYTES) {
         pendingError ??= new ClimbError("E_OUTPUT_LIMIT", `${argv[0]} output exceeded ${MAX_CAPTURE_BYTES} bytes`);
         abort();
-        return current;
+        return;
       }
-      return next;
+      capture.chunks.push(chunk);
+      capture.bytes += chunk.length;
     };
-    child.stdout.on("data", (chunk) => { stdout = collect(stdout, chunk); });
-    child.stderr.on("data", (chunk) => { stderr = collect(stderr, chunk); });
+    child.stdout.on("data", (chunk) => collect(stdout, chunk));
+    child.stderr.on("data", (chunk) => collect(stderr, chunk));
     child.on("error", (error) => finish(new ClimbError("E_PROCESS", `cannot start ${argv[0]}: ${error.message}`)));
     child.on("close", (code, signal) => {
+      // Descendants may have detached their stdio and ignored SIGTERM. Close
+      // the remaining process group before retiring the escalation timer.
+      if (options.signal?.aborted || pendingError) stop("SIGKILL");
       if (options.signal?.aborted) return finish(new InterruptedError(String(options.signal.reason ?? "interrupted")));
       if (pendingError) return finish(pendingError);
-      finish(null, { code: code ?? 1, signal, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8") });
+      finish(null, { code: code ?? 1, signal,
+        stdout: Buffer.concat(stdout.chunks, stdout.bytes).toString("utf8"),
+        stderr: Buffer.concat(stderr.chunks, stderr.bytes).toString("utf8") });
     });
   });
 }
@@ -355,7 +365,8 @@ class RunLock {
     fsyncSync(this.fd);
   }
   release() {
-    if (this.fd !== null) closeSync(this.fd);
+    if (this.fd === null) return;
+    closeSync(this.fd);
     this.fd = null;
     try { unlinkSync(this.path); } catch {}
   }
@@ -463,6 +474,10 @@ function validateConfig(config) {
       throw new ClimbError("E_USAGE", "at least one mutable glob is required");
     }
     normalizeEnvKeys(config.env_keys);
+    if (config.evaluation_parallel !== undefined &&
+        (!Number.isInteger(config.evaluation_parallel) || config.evaluation_parallel < 1 || config.evaluation_parallel > 8)) {
+      throw new ClimbError("E_USAGE", "evaluation_parallel must be an integer between 1 and 8");
+    }
   } else if (!config.experiment) {
     throw new ClimbError("E_USAGE", `hill-climber ${config.action} requires an experiment path`);
   }
@@ -488,17 +503,26 @@ function assertCleanRepository(workspace) {
   return { root, head: gitText(workspace, ["rev-parse", "HEAD"]) };
 }
 
-function safeRemoveWorktree(repo, path) {
-  if (!existsSync(path)) return;
-  runSync(["git", "-C", repo, "worktree", "remove", "--force", path], { allowFailure: true });
-  if (existsSync(path)) rmSync(path, { recursive: true, force: true });
-  runSync(["git", "-C", repo, "worktree", "prune"], { allowFailure: true });
+async function gitAsync(repo, args, allowFailure = false) {
+  const result = await runProcess(["git", "-C", repo, ...args]);
+  if (!allowFailure && result.code !== 0) {
+    throw new ClimbError("E_PROCESS", `git ${args.join(" ")} failed: ${bounded(result.stderr || result.stdout, 1200).trim()}`);
+  }
+  return result;
 }
 
-function addWorktree(repo, path, commit) {
-  safeRemoveWorktree(repo, path);
+async function safeRemoveWorktree(repo, path) {
+  if (!existsSync(path)) return;
+  const removed = await gitAsync(repo, ["worktree", "remove", "--force", path], true);
+  if (removed.code === 0) return;
+  if (existsSync(path)) rmSync(path, { recursive: true, force: true });
+  await gitAsync(repo, ["worktree", "prune"], true);
+}
+
+async function addWorktree(repo, path, commit) {
+  await safeRemoveWorktree(repo, path);
   mkdirSync(dirname(path), { recursive: true });
-  runSync(["git", "-C", repo, "worktree", "add", "--detach", path, commit]);
+  await gitAsync(repo, ["worktree", "add", "--detach", path, commit]);
 }
 
 function changedPaths(worktree) {
@@ -642,6 +666,8 @@ function createContext(request) {
     candidates: request.candidates,
     rounds: request.rounds,
     generation_parallel: request.generation_parallel,
+    evaluation_parallel: request.evaluation_parallel ?? 1,
+    usage_accounting: "generation",
     repeats: request.repeats,
     holdout_repeats: request.holdout_repeats,
     model: request.model,
@@ -733,9 +759,45 @@ async function assertRuntime(context) {
     throw new ClimbError("E_SDK", "Codex SDK does not export Codex", 2,
       { next_action: "reinstall pi graph, then resume" });
   }
+  assertSourceRepository(context);
+}
+
+function assertAppliedSource(context) {
   const source = context.manifest.source;
-  if (gitText(source.workspace, ["rev-parse", "HEAD"]) !== source.head ||
-      gitText(source.workspace, ["status", "--porcelain=v1", "--untracked-files=normal"])) {
+  const applied = context.ledger.records.filter((record) => record.type === "winner_applied").at(-1)?.payload;
+  const patchPath = join(context.experiment, "winner.patch");
+  const patchHash = existsSync(patchPath) ? fileSha256(patchPath) : null;
+  const expectedPatch = git(context.repo, ["diff", "--binary", source.head, context.state.incumbent.commit]).stdout;
+  if (!applied || applied.workspace !== source.workspace ||
+      applied.patch_sha256 !== sha256(expectedPatch) || patchHash !== applied.patch_sha256) {
+    throw new ClimbError("E_EVIDENCE", "applied winner does not match its recorded patch", 3);
+  }
+  // Snapshot the working tree through an isolated index, including newly added
+  // files. Never stage into or modify the user's actual index during recovery.
+  const index = join(context.experiment, `.verify-source-${randomUUID()}.index`);
+  const options = { env: sanitizeEnv({ GIT_INDEX_FILE: index }) };
+  try {
+    git(source.workspace, ["read-tree", source.head], options);
+    // Track expected additions before staging actual contents. Local excludes
+    // are not inherited by candidates and must not hide an applied new file.
+    git(source.workspace, ["apply", "--cached", "--binary", patchPath], options);
+    git(source.workspace, ["add", "-A", "--", "."], options);
+    const tree = git(source.workspace, ["write-tree"], options).stdout.trim();
+    if (tree !== gitText(context.repo, ["rev-parse", `${context.state.incumbent.commit}^{tree}`])) {
+      throw new ClimbError("E_DRIFT", "source differs from the controller's recorded applied winner", 3);
+    }
+  } finally {
+    rmSync(index, { force: true });
+  }
+}
+
+function assertSourceRepository(context) {
+  const source = context.manifest.source;
+  if (gitText(source.workspace, ["rev-parse", "HEAD"]) !== source.head) {
+    throw new ClimbError("E_DRIFT", "source HEAD changed after the experiment was created", 3);
+  }
+  if (context.state.applied) assertAppliedSource(context);
+  else if (gitText(source.workspace, ["status", "--porcelain=v1", "--untracked-files=normal"])) {
     throw new ClimbError("E_DRIFT", "source repository changed after the experiment was created", 3);
   }
   if (gitText(context.repo, ["rev-parse", "refs/hill-climber/baseline"]) !== source.head) {
@@ -762,7 +824,7 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
   const scores = [];
   const results = [];
   const worktree = join(context.experiment, "worktrees", `grade-${id}-${phase}`);
-  addWorktree(context.repo, worktree, commit);
+  await addWorktree(context.repo, worktree, commit);
   try {
     await prepareWorktree(context, worktree);
     for (let repeat = 0; repeat < repeats; repeat += 1) {
@@ -793,7 +855,7 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
       results.push(record);
     }
   } finally {
-    safeRemoveWorktree(context.repo, worktree);
+    await safeRemoveWorktree(context.repo, worktree);
   }
   const gates = {};
   for (const result of results) {
@@ -888,6 +950,7 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   let threadId = null;
   let turnCompleted = 0;
   let failure = null;
+  let streamError = null;
   try {
     const streamed = await thread.runStreamed(prompt, { outputSchema: CANDIDATE_SCHEMA, signal });
     for await (const event of streamed.events) {
@@ -902,31 +965,44 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
     }
   } catch (error) {
     if (signal.aborted) {
-      if (context.abortController.signal.aborted) throw new InterruptedError();
-      throw new ClimbError("E_CANDIDATE_TIMEOUT", `candidate ${candidateId} exceeded ${context.config.candidate_timeout_seconds}s`);
-    }
-    throw new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${error.message}`);
+      streamError = context.abortController.signal.aborted ? new InterruptedError()
+        : new ClimbError("E_CANDIDATE_TIMEOUT", `candidate ${candidateId} exceeded ${context.config.candidate_timeout_seconds}s`);
+    } else streamError = new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${error.message}`);
   }
   const trace = { schema: `${SCHEMA}.codex-turn`, candidate_id: candidateId, thread_id: threadId, usage, events };
   const candidateDir = join(context.experiment, "candidates", candidateId);
   mkdirSync(candidateDir, { recursive: true });
   atomicWrite(join(candidateDir, "turn.json"), trace);
-  if (failure) throw new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${failure}`);
+  if (streamError) {
+    streamError.details.usage = usage;
+    throw streamError;
+  }
+  if (failure) throw new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${failure}`, 2, { usage });
   if (!threadId || turnCompleted !== 1 || !usage || usageTotal(usage) <= 0 || !finalResponse.trim()) {
-    throw new ClimbError("E_SDK_EMPTY", `Codex candidate ${candidateId} ended without a complete, metered response`);
+    throw new ClimbError("E_SDK_EMPTY", `Codex candidate ${candidateId} ended without a complete, metered response`, 2, { usage });
   }
   let metadata;
   try { metadata = JSON.parse(finalResponse); }
-  catch (error) { throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response was not JSON: ${error.message}`); }
+  catch (error) { throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response was not JSON: ${error.message}`, 2, { usage }); }
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response must be a JSON object`, 2, { usage });
+  }
   for (const key of CANDIDATE_SCHEMA.required) {
     if (typeof metadata[key] !== "string" || !metadata[key].trim()) {
-      throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response omitted ${key}`);
+      throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response omitted ${key}`, 2, { usage });
     }
   }
   return { metadata, usage, thread_id: threadId, trace_sha256: fileSha256(join(candidateDir, "turn.json")) };
 }
 
 function priorEvidence(context) {
+  const baseline = context.ledger.records.find((record) => record.type === "baseline_evaluated")?.payload.evaluation;
+  const baselineLine = baseline ? [
+    `baseline: score=${baseline.score}; gates=${baseline.gates_passed}`,
+    `diagnostics=${bounded((baseline.details ?? []).join(" | "), 1200)}`,
+    `actionable_feedback=${bounded((baseline.feedback ?? []).join(" | "), 1200)}`,
+    `metrics=${bounded(JSON.stringify(baseline.metrics ?? []), 1200)}`,
+  ].join("; ") : "";
   const decisions = new Map();
   for (const record of context.ledger.records) {
     if (!["candidate_kept", "candidate_rejected"].includes(record.type)) continue;
@@ -968,7 +1044,10 @@ function priorEvidence(context) {
     .filter((record) => record.type === "round_selected")
     .slice(-4)
     .map((record) => `round ${record.payload.round}: selected ${record.payload.selected_id ?? "incumbent"}; score=${record.payload.incumbent_score_after}`);
-  return bounded([...lines, ...failures, ...selections].join("\n"), 12000);
+  // Keep baseline diagnostics and the newest decisions when the evidence
+  // budget fills; truncating oldest-first history hid the most useful signal.
+  return bounded([baselineLine, ...selections.reverse(), ...failures.reverse(), ...lines.reverse()]
+    .filter(Boolean).join("\n"), 12000);
 }
 
 async function generateCandidate(context, round, index, parent) {
@@ -982,7 +1061,7 @@ async function generateCandidate(context, round, index, parent) {
   const started = process.hrtime.bigint();
   let codex = null;
   try {
-    addWorktree(context.repo, worktree, parent);
+    await addWorktree(context.repo, worktree, parent);
     await prepareWorktree(context, worktree);
     const prompt = candidatePrompt(context, candidateId, round, index, parent, strategy, priorEvidence(context));
     atomicWrite(join(candidateDir, "prompt.txt"), prompt);
@@ -1015,23 +1094,33 @@ async function generateCandidate(context, round, index, parent) {
       status: "generated",
     };
     atomicWrite(join(candidateDir, "generated.json"), result);
+    if (context.config.usage_accounting === "generation") addUsage(context.state.usage, codex.usage);
     append(context, "candidate_generated", result);
     return result;
   } catch (error) {
-    if (error instanceof InterruptedError) throw error;
+    if (error instanceof InterruptedError) {
+      // Preserve usage already reported by a stream even when its turn failed
+      // to finish. Unknown usage remains unknown; never invent a token count.
+      if (error.details?.usage) {
+        addUsage(context.state.usage, error.details.usage);
+        append(context, "candidate_interrupted", { candidate_id: candidateId, round, usage: error.details.usage });
+      }
+      throw error;
+    }
     const classified = error instanceof ClimbError ? error : new ClimbError("E_CANDIDATE", error.message);
     const status = ["E_NO_CHANGE", "E_MUTABLE_BOUNDARY", "E_SDK_SCHEMA"].includes(classified.code) ? "invalid" : "crashed";
     context.state.counts[status] += 1;
     context.state.counts.candidates += 1;
     context.state.failures += 1;
-    addUsage(context.state.usage, codex?.usage);
+    const usage = codex?.usage ?? classified.details?.usage ?? null;
+    addUsage(context.state.usage, usage);
     append(context, status === "invalid" ? "candidate_invalid" : "candidate_crashed", {
       candidate_id: candidateId,
       round,
       index: index + 1,
       code: classified.code,
       error: bounded(classified.message),
-      usage: codex?.usage ?? null,
+      usage,
       wall_seconds: monotonicSeconds(started),
     });
     atomicWrite(join(candidateDir, "failure.json"), {
@@ -1040,29 +1129,38 @@ async function generateCandidate(context, round, index, parent) {
     progress(context.config, `CANDIDATE ${index + 1}/${context.config.candidates}`, `${status.toUpperCase()} ${classified.code}: ${bounded(classified.message, 240)}`);
     return { candidate_id: candidateId, round, index: index + 1, status, error: classified.message };
   } finally {
-    safeRemoveWorktree(context.repo, worktree);
+    await safeRemoveWorktree(context.repo, worktree);
   }
 }
 
-async function mapLimit(items, limit, fn) {
+async function mapLimit(items, limit, fn, shouldContinue = () => true) {
   const results = new Array(items.length);
   let cursor = 0;
+  let failed = false;
+  let firstError;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
+    while (!failed && shouldContinue()) {
       const index = cursor;
       cursor += 1;
       if (index >= items.length) return;
-      results[index] = await fn(items[index], index);
+      try { results[index] = await fn(items[index], index); }
+      catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+        throw error;
+      }
     }
   });
-  await Promise.all(workers);
+  // Keep the one-writer lock until every in-flight task has checkpointed and
+  // removed its worktree, even when one worker fails or is interrupted.
+  await Promise.allSettled(workers);
+  if (failed) throw firstError;
   return results;
 }
 
 async function evaluateCandidates(context, generated) {
-  const evaluated = [];
-  for (const candidate of generated) {
-    if (candidate.status !== "generated") continue;
+  const evaluated = await mapLimit(generated.filter((candidate) => candidate.status === "generated"),
+    context.config.evaluation_parallel ?? 1, async (candidate) => {
     const { candidate_id: candidateId, commit } = candidate;
     const index = candidate.index;
     progress(context.config, `CANDIDATE ${index}/${context.config.candidates}`, `EVALUATING ${candidateId}`);
@@ -1082,7 +1180,7 @@ async function evaluateCandidates(context, generated) {
       };
       atomicWrite(join(context.experiment, "candidates", candidateId, "result.json"), result);
       context.state.counts.candidates += 1;
-      addUsage(context.state.usage, candidate.usage);
+      if (context.config.usage_accounting !== "generation") addUsage(context.state.usage, candidate.usage);
       append(context, "candidate_evaluated", {
         candidate_id: candidateId,
         round: candidate.round,
@@ -1095,16 +1193,16 @@ async function evaluateCandidates(context, generated) {
         usage: candidate.usage,
         details: bounded(evaluation.details.join(" "), 1200),
       });
-      evaluated.push(result);
       progress(context.config, `CANDIDATE ${index}/${context.config.candidates}`,
         `SCORED ${evaluation.score.toFixed(6)} gates=${evaluation.gates_passed ? "pass" : "fail"}`);
+      return result;
     } catch (error) {
       if (error instanceof InterruptedError) throw error;
       const classified = error instanceof ClimbError ? error : new ClimbError("E_EVALUATOR", error.message);
       context.state.counts.crashed += 1;
       context.state.counts.candidates += 1;
       context.state.failures += 1;
-      addUsage(context.state.usage, candidate.usage);
+      if (context.config.usage_accounting !== "generation") addUsage(context.state.usage, candidate.usage);
       append(context, "candidate_crashed", {
         candidate_id: candidateId,
         round: candidate.round,
@@ -1118,10 +1216,11 @@ async function evaluateCandidates(context, generated) {
       });
       progress(context.config, `CANDIDATE ${index}/${context.config.candidates}`,
         `CRASHED ${classified.code}: ${bounded(classified.message, 240)}`);
+      return null;
     }
-    if (context.state.failures >= context.config.max_failures) break;
-  }
-  return evaluated;
+  }, () => !context.abortController.signal.aborted && context.state.failures < context.config.max_failures);
+  if (context.abortController.signal.aborted) throw new InterruptedError();
+  return evaluated.filter(Boolean);
 }
 
 function compareCandidate(candidate, incumbent, config) {
@@ -1229,16 +1328,38 @@ function pendingRound(context) {
 function candidateArtifact(context, round, index) {
   const candidateId = `r${String(round).padStart(2, "0")}-c${String(index + 1).padStart(2, "0")}`;
   const directory = join(context.experiment, "candidates", candidateId);
-  const resultPath = join(directory, "result.json");
   const generatedPath = join(directory, "generated.json");
-  const failurePath = join(directory, "failure.json");
-  if (existsSync(resultPath)) return readJson(resultPath);
-  if (existsSync(generatedPath)) return readJson(generatedPath);
-  if (existsSync(failurePath)) {
-    const failure = readJson(failurePath);
-    return { candidate_id: candidateId, round, index: index + 1, status: "failed", error: failure.message };
+  const events = context.ledger.records.filter((record) => record.payload.candidate_id === candidateId);
+  const terminal = events.filter((record) =>
+    ["candidate_evaluated", "candidate_invalid", "candidate_crashed"].includes(record.type)).at(-1);
+  if (terminal && terminal.type !== "candidate_evaluated") {
+    return { candidate_id: candidateId, round, index: index + 1, status: "failed", error: terminal.payload.error };
   }
-  return null;
+  const generated = events.find((record) => record.type === "candidate_generated");
+  if (!generated) return null;
+  const artifact = readGeneratedArtifact(generatedPath, generated);
+  return terminal ? readEvaluatedArtifact(directory, artifact, terminal) : artifact;
+}
+
+function readGeneratedArtifact(path, event) {
+  const artifact = readJson(path);
+  if (jsonBytes(artifact) !== jsonBytes(event.payload)) {
+    throw new ClimbError("E_EVIDENCE", `candidate ${event.payload.candidate_id} generation artifact differs from its ledger`, 3);
+  }
+  return artifact;
+}
+
+function readEvaluatedArtifact(directory, generated, event) {
+  const result = readJson(join(directory, "result.json"));
+  const projection = Object.fromEntries(Object.keys(event.payload)
+    .filter((key) => key !== "details").map((key) => [key, result[key]]));
+  const expected = { ...event.payload };
+  delete expected.details;
+  if (result.status !== "evaluated" || jsonBytes(projection) !== jsonBytes(expected) ||
+      Object.entries(generated).some(([key, value]) => key !== "status" && jsonBytes(result[key]) !== jsonBytes(value))) {
+    throw new ClimbError("E_EVIDENCE", `candidate ${event.payload.candidate_id} result artifact differs from its ledger`, 3);
+  }
+  return result;
 }
 
 function holdoutRecord(context, type) {
@@ -1288,13 +1409,18 @@ async function runRound(context, round, recovery = null) {
   const indexes = Array.from({ length: context.config.candidates }, (_, index) => index);
   const artifacts = indexes.map((index) => candidateArtifact(context, round, index));
   const missing = indexes.filter((index) => artifacts[index] === null);
-  const regenerated = await mapLimit(missing, context.config.generation_parallel,
-    async (index) => await generateCandidate(context, round, index, parent));
-  for (let cursor = 0; cursor < missing.length; cursor += 1) artifacts[missing[cursor]] = regenerated[cursor];
+  // Recovery may finish already generated work, but it must not spend another
+  // model turn after an exhausted budget or an explicit stop request.
+  const recoveryStopped = recovery && ["stop_requested", "wall_budget_exhausted",
+    "token_budget_exhausted", "failure_budget_exhausted"].includes(stopReason(context));
+  const toGenerate = recoveryStopped ? [] : missing;
+  const regenerated = await mapLimit(toGenerate, context.config.generation_parallel,
+    async (index) => await generateCandidate(context, round, index, parent),
+    () => !context.abortController.signal.aborted && context.state.failures < context.config.max_failures);
+  for (let cursor = 0; cursor < toGenerate.length; cursor += 1) artifacts[toGenerate[cursor]] = regenerated[cursor];
   if (context.abortController.signal.aborted) throw new InterruptedError();
   const alreadyEvaluated = artifacts.filter((candidate) => candidate?.status === "evaluated");
-  const newlyEvaluated = await evaluateCandidates(context,
-    artifacts.filter((candidate) => candidate?.status === "generated"));
+  const newlyEvaluated = await evaluateCandidates(context, artifacts.filter(Boolean));
   const evaluated = [...alreadyEvaluated, ...newlyEvaluated];
   if (!evaluated.length) {
     context.state.plateau_rounds += 1;
@@ -1720,21 +1846,24 @@ function assertEvaluatorHygiene(context) {
 }
 
 async function execute(context) {
+  const completedHoldout = holdoutRecord(context, "holdout_completed");
+  if (completedHoldout) {
+    // Finishing a durable promotion needs source integrity, not another model
+    // login, evaluator secret, or invocation of the one-time holdout.
+    assertSourceRepository(context);
+    const promotionResult = completedHoldout.payload;
+    context.state.status = promotionResult.verdict === "promoted" ? "promoted" : "retained";
+    const patchPath = applyWinner(context);
+    const receipt = makeReceipt(context, promotionResult, patchPath);
+    saveState(context);
+    return receipt;
+  }
   await assertRuntime(context);
   assertEvaluatorHygiene(context);
   progress(context.config, "CLIMB", `${context.experiment} task=${context.config.task}`);
   context.state.status = "searching";
   await baseline(context);
   const incompleteHoldout = holdoutRecord(context, "holdout_started");
-  const completedHoldout = holdoutRecord(context, "holdout_completed");
-  if (completedHoldout) {
-    const promotionResult = completedHoldout.payload;
-    const patchPath = applyWinner(context);
-    const receipt = makeReceipt(context, promotionResult, patchPath);
-    context.state.status = receipt.status;
-    saveState(context);
-    return receipt;
-  }
   if (incompleteHoldout) {
     const previous = context.state.incumbent;
     applyRef(context.repo, "incumbent", context.state.baseline.commit);
@@ -1866,7 +1995,7 @@ async function main() {
   }
   let context;
   try {
-    context = request.action === "run" ? createContext(request) : loadContext(request.experiment, request);
+    context = request.action === "run" ? createContext(request) : { experiment: resolve(request.experiment) };
   } catch (error) {
     const experiment = request.action === "run"
       ? (existsSync(request.out) ? request.out : null)
@@ -1874,7 +2003,18 @@ async function main() {
     return emitError(request, error, experiment);
   }
   const lock = new RunLock(join(context.experiment, "run.lock"));
-  lock.acquire();
+  try {
+    if (request.action === "resume" && !existsSync(manifestPath(context.experiment))) {
+      throw new ClimbError("E_EVIDENCE", `cannot read experiment manifest ${manifestPath(context.experiment)}`, 3);
+    }
+    lock.acquire();
+    // Resume reads its authoritative projection only after owning the writer
+    // lock, so a just-finished writer cannot leave us with stale in-memory state.
+    if (request.action === "resume") context = loadContext(request.experiment, request);
+  } catch (error) {
+    lock.release();
+    return emitError(request, error, context.experiment);
+  }
   const interrupt = () => context.abortController.abort("user interrupt");
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
@@ -1882,7 +2022,7 @@ async function main() {
     if (request.action === "resume") {
       if (["promoted", "retained"].includes(context.state.status) && existsSync(join(context.experiment, "receipt.json"))) {
         emit(context.config, summaryPayload(context, readJson(join(context.experiment, "receipt.json"))));
-        return 0;
+        return context.state.status === "promoted" ? 0 : 1;
       }
       append(context, "run_resumed", { previous_status: context.state.status });
     }

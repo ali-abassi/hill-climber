@@ -37,6 +37,11 @@ usage: hill-climber [-h] [--version] {run,resume,status,stop,inspect} ...
 
 `bin/hill-climber` exposes the CLI; `scripts/hill_climber.mjs` controls the loop; `SKILL.md` and `SECURITY.md` define operating boundaries.
 
+Independent development evaluators can overlap with `--evaluation-parallel 5`.
+Grading defaults to serial; keep it serial for timing metrics, GPUs, or shared
+state. See the [controller optimization measurements](docs/controller-optimization.md)
+and [reproducible throughput benchmark](benchmarks/controller).
+
 ## Commands and setup
 
 | You want to… | Start here |
@@ -226,6 +231,19 @@ information for later rounds; it may be one string or an array of strings.
 
 Interrupted rounds reuse committed artifacts. If interruption happens after
 the holdout begins, that holdout is closed and never replayed.
+Resume checks generation and evaluation artifacts against the verified ledger,
+keeps failed evaluations terminal, and restores a completed holdout decision
+before applying. Missing model turns are not launched after a stop request or
+an exhausted wall, token, or failure budget.
+
+Use `--evaluation-parallel N` (1–8, default 1) only when development evaluators
+are independent and safe to run together. Each grader gets a separate detached
+worktree; repeats within a grader stay sequential with the same paired seeds.
+Selection remains deterministic regardless of completion order. Holdout
+baseline and candidate grading remain serial. Concurrent grading can distort
+timing measurements or contend for shared services; leave it at 1 in those
+cases. When a failure threshold is reached, no new graders start, while graders
+already running finish and may exceed that threshold.
 
 Every completed experiment writes a self-contained `report.svg` from the same
 hash-chained evidence as `receipt.json`. The graph groups every evaluated
@@ -390,6 +408,10 @@ Candidate turns already in flight are allowed to finish, so actual usage and
 elapsed time can overshoot `--max-tokens` and `--max-wall-seconds`. Candidate
 count, round count, and per-candidate/evaluator timeouts define the hard outer
 bounds.
+New experiments account for reported SDK usage at generation time, including
+ungraded and malformed-response candidates. Resume preserves the accounting
+mode of older experiments. Failed and interrupted streams save the events and
+usage received so far; unreported usage cannot be inferred.
 
 ## Evidence
 
@@ -404,7 +426,7 @@ The committed deterministic suite covers:
 
 The disclosed real-Codex benchmarks add full receipts, ledgers, patches, and
 score graphs for correctness, latency, iteration, and a non-code policy prompt.
-Public CI runs all seventeen tests plus syntax checks and a production
+Public CI runs the complete deterministic suite plus syntax checks and a production
 dependency audit. Together these validate the controller protocol and four
 observed improvements; they do **not** establish a
 general success rate or superiority over AutoAgent, autoresearch, manual Codex,

@@ -100,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="maximum rounds (default: 1)")
     run.add_argument("--generation-parallel", type=bounded_int(1, 8), default=2, metavar="N",
                      help="concurrent Codex turns (default: 2)")
+    run.add_argument("--evaluation-parallel", type=bounded_int(1, 8), default=1, metavar="N",
+                     help="concurrent independent development graders (default: 1; "
+                          "keep at 1 for timing metrics or shared resources)")
     run.add_argument("--repeats", type=bounded_int(1, 10), default=1, metavar="N",
                      help="paired development evaluation repeats")
     run.add_argument("--holdout-repeats", type=bounded_int(1, 10), default=1, metavar="N",
@@ -169,6 +172,7 @@ def request_from(args: argparse.Namespace) -> dict[str, object]:
         "candidates": args.candidates,
         "rounds": args.rounds,
         "generation_parallel": args.generation_parallel,
+        "evaluation_parallel": args.evaluation_parallel,
         "repeats": args.repeats,
         "holdout_repeats": args.holdout_repeats,
         "model": args.model,

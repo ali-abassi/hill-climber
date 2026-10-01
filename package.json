@@ -20,8 +20,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "python3 -m unittest -v tests.test_hill_climber",
-    "check": "node --check scripts/hill_climber.mjs && python3 -m py_compile bin/hill-climber tests/test_hill_climber.py && npm test"
+    "test": "python3 -m unittest discover -v -s tests -t .",
+    "check": "node --check scripts/hill_climber.mjs && python3 -m py_compile bin/hill-climber tests/test_*.py benchmarks/controller/benchmark.py && npm test"
   },
   "dependencies": {
     "@openai/codex-sdk": "0.149.0",

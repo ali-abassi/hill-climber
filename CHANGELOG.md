@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Added opt-in `--evaluation-parallel` (1–8, default 1) for independent
+  development graders, with isolated worktrees, paired sequential repeats,
+  deterministic selection, and serial holdout evaluation. Added a no-model
+  controller throughput benchmark; keep grading serial for timing metrics.
+- Made worktree creation/removal asynchronous and skipped redundant pruning
+  after successful removal. Subprocess output now accumulates bounded chunks
+  and concatenates once, preserving split UTF-8 and the 2 MiB per-stream cap.
+- Drain all in-flight workers before releasing the writer lock on failure or
+  interruption. Resume validates candidate artifacts against the ledger,
+  never resurrects failed evaluations, restores completed holdout promotion,
+  and refuses fresh model turns after a stop request or exhausted budgets.
+- Account for reported SDK usage at generation rather than successful grading
+  in new experiments; preserve traces and known usage on malformed or failed
+  streams. Keep legacy experiment accounting compatible on resume.
+- Supply baseline diagnostics to the first round and prioritize recent
+  development evidence when the reflection budget fills.
+- Updated the locked `brace-expansion` dependency from 2.1.4 to 2.1.7, fixing
+  the production dependency audit. Added deterministic lifecycle coverage for
+  throughput, buffering, recovery, artifact integrity, and token accounting.
+
 - Added `benchmarks/prompt`, the first disclosed non-code climb. The mutable
   artifact is a Markdown routing prompt; a pinned DeepSeek Flash evaluator with
   medium reasoning and host-enforced structured output scores exact queue
