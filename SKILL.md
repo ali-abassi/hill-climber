@@ -174,3 +174,12 @@ completion is rejected. Finite SDK streams that finish after ignoring abort are
 drained for evidence, then refused before grading. This is acceptance protection,
 not force termination of arbitrary third-party code. See docs/sdk-contract.md.
 </completion_contract>
+
+<codex_binary_override>
+If the SDK's bundled Codex cannot read newer local config, set
+HILL_CLIMBER_CODEX_PATH to an absolute compatible installed executable. The same
+binary performs login preflight and SDK turns; keep the variable set for resume.
+This selects the SDK's supported binary override without changing global config,
+SDK streaming policy, account credentials or the candidate environment allowlist.
+Without it the original bundled-binary behavior remains.
+</codex_binary_override>

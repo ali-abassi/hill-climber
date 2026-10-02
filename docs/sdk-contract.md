@@ -22,3 +22,14 @@ The promoted source patch is preserved exactly at integration. Local receipts, l
 ## Source-informed design
 
 Official Codex source at commit a4bfd07d51fa941d70e41cc0345b631ab5a41224 forwards outputSchema and signal while parsing streamed JSON into typed events: [thread.ts](https://github.com/openai/codex/blob/a4bfd07d51fa941d70e41cc0345b631ab5a41224/sdk/typescript/src/thread.ts). Its [abort tests](https://github.com/openai/codex/blob/a4bfd07d51fa941d70e41cc0345b631ab5a41224/sdk/typescript/tests/abort.test.ts) cover cooperative cancellation before execution and during iteration. Retain that mechanism; independently validate Hill Climber's own consuming boundary. No vendor code is copied and no dependency is added.
+
+## Codex binary override
+
+A separate direct compatibility fix exposes the installed SDK's supported codexPathOverride. It is not an additional measured self-climb gain. When a bundled binary cannot read newer local configuration, choose a known compatible installed CLI:
+
+```bash
+export HILL_CLIMBER_CODEX_PATH="/absolute/path/to/codex"
+# Keep this set for run and resume in this shell.
+```
+
+The selected executable performs subscription-login preflight and starts SDK candidate turns. With no override, the SDK keeps its original default binary and login preflight uses codex on PATH. Candidate subprocesses still get the existing environment allowlist; the override does not forward unrelated secrets, replace SDK streaming/schema behavior, write account settings or alter global configuration. Arbitrary executable compatibility is not certified. A synthetic regression covers an executable path containing spaces, consistent auth/SDK selection, and environment exclusions. The preceding real self-climb used this same constructor option via a session-local adapter, with installed Codex 0.159.3 and SDK 0.149.0.

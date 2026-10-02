@@ -757,7 +757,7 @@ async function assertRuntime(context) {
   if (Number(process.versions.node.split(".")[0]) < 18) {
     throw new ClimbError("E_RUNTIME", `Codex SDK needs Node 18+; found ${process.version}`);
   }
-  const auth = runSync(["codex", "login", "status"], { allowFailure: true, env: sanitizeEnv() });
+  const auth = runSync([codexExecutable() ?? "codex", "login", "status"], { allowFailure: true, env: sanitizeEnv() });
   const authText = `${auth.stdout}\n${auth.stderr}`;
   if (auth.status !== 0 || !/Logged in using ChatGPT/i.test(authText)) {
     throw new ClimbError("E_AUTH", "Codex is not signed in with ChatGPT subscription access", 2,
@@ -956,6 +956,11 @@ const CANDIDATE_SCHEMA = {
   additionalProperties: false,
 };
 
+function codexExecutable() {
+  const override = process.env.HILL_CLIMBER_CODEX_PATH;
+  return override ? resolve(override) : null;
+}
+
 async function loadCodex() {
   const override = process.env.HILL_CLIMBER_CODEX_MODULE;
   if (override) {
@@ -970,7 +975,11 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   if (typeof module.Codex !== "function") throw new ClimbError("E_SDK", "Codex SDK module does not export Codex");
   // Codex needs HOME/CODEX_HOME for the cached ChatGPT login, but candidate
   // shells must not inherit unrelated API keys or CI secrets.
-  const codex = new module.Codex({ env: sanitizeEnv() });
+  const binary = codexExecutable();
+  const codex = new module.Codex({
+    env: sanitizeEnv(),
+    ...(binary ? { codexPathOverride: binary } : {}),
+  });
   const thread = codex.startThread({
     workingDirectory: worktree,
     sandboxMode: "workspace-write",

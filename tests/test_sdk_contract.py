@@ -10,6 +10,13 @@ const spec=SPEC;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const usage=USAGE;
 export class Codex {
+  constructor(options) {
+    if(spec.check_binary) {
+      if(options.codexPathOverride!==spec.expected_binary) throw new Error('explicit binary was not passed to SDK');
+      if('TOP_SECRET_FOR_CLIMB' in options.env || 'HILL_CLIMBER_CODEX_PATH' in options.env)
+        throw new Error('controller settings or unrelated secret leaked into SDK environment');
+    }
+  }
   startThread(options) { return {async runStreamed(prompt,{signal}) {
     writeFileSync(join(options.workingDirectory,'solution.txt'),'1\n');
     if(spec.stage==='before_stream') await sleep(spec.delay);
@@ -44,6 +51,12 @@ def one_case(source: Path, case: dict) -> dict:
         subprocess.run(['git','commit','-qm','baseline'],cwd=repo,check=True)
         bindir=root/'bin';bindir.mkdir();codex=bindir/'codex'
         codex.write_text("#!/bin/sh\nprintf '%s\\n' 'Logged in using ChatGPT'\n");codex.chmod(0o755)
+        if case.get('check_binary'):
+            alternate=bindir/'alternate codex'
+            alternate.write_text("#!/bin/sh\nprintf '%s\\n' 'Logged in using ChatGPT'\n")
+            alternate.chmod(0o755)
+            codex.write_text("#!/bin/sh\nexit 1\n")
+            case={**case,'expected_binary':str(alternate)}
         usage=case.get('usage',{'input_tokens':9,'output_tokens':5,'cached_input_tokens':0,'reasoning_output_tokens':0})
         sdk=root/'sdk.mjs'
         sdk.write_text(SDK.replace('SPEC',json.dumps(case)).replace('USAGE',case.get('usage_literal',json.dumps(usage))))
@@ -51,6 +64,10 @@ def one_case(source: Path, case: dict) -> dict:
         dev=root/'dev.py';private=root/'private.py';dev.write_text(evaluator);private.write_text(evaluator)
         experiment=root/'experiment'
         env=os.environ.copy();env.update(PATH=str(bindir)+os.pathsep+env['PATH'],HILL_CLIMBER_CODEX_MODULE=str(sdk))
+        env.pop('HILL_CLIMBER_CODEX_PATH',None)
+        if case.get('check_binary'):
+            env['HILL_CLIMBER_CODEX_PATH']=case['expected_binary']
+            env['TOP_SECRET_FOR_CLIMB']='synthetic-constructor-secret'
         for key in ('HILL_CLIMBER_FAKE_SCENARIO','HILL_CLIMBER_FAKE_DELAY_MS','PAL_SESSION','PAL_DEPTH','PAL_ROLE'):
             env.pop(key,None)
         command=[sys.executable,str(source/'bin/hill-climber'),'run','--json','--workspace',str(repo),
@@ -129,6 +146,9 @@ class SDKCompletionContractTests(unittest.TestCase):
 
     def test_user_cancellation_does_not_publish_late_generated_candidate(self):
         self.check_case("interrupt", stage="interrupt", delay=80)
+
+    def test_explicit_binary_is_used_for_auth_and_sdk_without_environment_leaks(self):
+        self.check_case(check_binary=True)
 
     def test_provider_error_keeps_reported_usage_and_inspectable_evidence(self):
         self.check_case("E_SDK", error=True)

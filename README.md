@@ -391,6 +391,8 @@ stdout contains one machine document while progress stays on stderr.
 | Codex SDK | `@openai/codex-sdk` 0.149.0, pinned |
 | Evaluators | Any trusted local executable that returns the JSON contract |
 
+For a newer installed Codex CLI, set `HILL_CLIMBER_CODEX_PATH` to its absolute executable path. Hill Climber uses it for subscription-login preflight and the SDK’s supported `codexPathOverride`; other SDK and environment boundaries stay the same. Keep the variable set when resuming. This handles bundled-binary/config compatibility without a custom SDK module or global-config edits. See [the runtime contract](docs/sdk-contract.md#codex-binary-override).
+
 The intended floor is Node 18+, Python 3.9+, Git, and a Codex CLI session that
 reports `Logged in using ChatGPT`. Windows-native and remote/SSH operation have
 not been certified.
