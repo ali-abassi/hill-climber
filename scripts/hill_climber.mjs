@@ -372,11 +372,6 @@ class RunLock {
   }
 }
 
-function usageTotal(usage) {
-  if (!usage) return 0;
-  return Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0);
-}
-
 function usageZero() {
   return {
     input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0,
@@ -384,9 +379,29 @@ function usageZero() {
   };
 }
 
+function validUsage(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return false;
+  const isCount = (value) => typeof value === "number" && Number.isFinite(value)
+    && Number.isInteger(value) && value >= 0;
+  for (const key of ["input_tokens", "output_tokens"]) {
+    if (!Object.prototype.hasOwnProperty.call(usage, key) || !isCount(usage[key])) return false;
+  }
+  for (const key of ["cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens"]) {
+    if (Object.prototype.hasOwnProperty.call(usage, key) && !isCount(usage[key])) return false;
+  }
+  const total = usage.input_tokens + usage.output_tokens;
+  return Number.isFinite(total) && total > 0;
+}
+
+function usageTotal(usage) {
+  return validUsage(usage) ? usage.input_tokens + usage.output_tokens : 0;
+}
+
 function addUsage(target, usage) {
-  if (!usage) return target;
-  for (const key of Object.keys(target)) target[key] += Number(usage[key] ?? 0);
+  if (!validUsage(usage)) return target;
+  const totals = Object.keys(target).map((key) => [key, target[key] + (usage[key] ?? 0)]);
+  if (totals.some(([, total]) => !Number.isFinite(total))) return target;
+  for (const [key, total] of totals) target[key] = total;
   return target;
 }
 
@@ -970,6 +985,7 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   const events = [];
   let finalResponse = "";
   let usage = null;
+  let reportedUsage = null;
   let threadId = null;
   let turnCompleted = 0;
   let failure = null;
@@ -979,7 +995,11 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
     for await (const event of streamed.events) {
       events.push(event);
       if (event.type === "thread.started") threadId = event.thread_id;
-      if (event.type === "turn.completed") { usage = event.usage; turnCompleted += 1; }
+      if (event.type === "turn.completed") {
+        reportedUsage = event.usage ?? null;
+        usage = validUsage(event.usage) ? event.usage : null;
+        turnCompleted += 1;
+      }
       if (event.type === "turn.failed") failure = event.error?.message ?? "turn failed";
       if (event.type === "error") failure = event.message ?? "SDK stream error";
       if (event.type === "item.completed" && event.item?.type === "agent_message") {
@@ -995,14 +1015,28 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   const trace = { schema: `${SCHEMA}.codex-turn`, candidate_id: candidateId, thread_id: threadId, usage, events };
   const candidateDir = join(context.experiment, "candidates", candidateId);
   mkdirSync(candidateDir, { recursive: true });
-  atomicWrite(join(candidateDir, "turn.json"), trace);
+  atomicWrite(join(candidateDir, "turn.json"), { ...trace, usage: reportedUsage });
+  // Some SDK adapters finish their finite stream after ignoring abort. Drain
+  // it so its events and meter remain inspectable, then reject it at the same
+  // acceptance boundary as an adapter that cooperatively throws on abort.
+  if (signal.aborted) {
+    const error = context.abortController.signal.aborted
+      ? new InterruptedError(String(context.abortController.signal.reason ?? "interrupted"))
+      : new ClimbError("E_CANDIDATE_TIMEOUT",
+        `candidate ${candidateId} exceeded ${context.config.candidate_timeout_seconds}s`);
+    error.details.usage = usage;
+    throw error;
+  }
   if (streamError) {
     streamError.details.usage = usage;
     throw streamError;
   }
   if (failure) throw new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${failure}`, 2, { usage });
-  if (!threadId || turnCompleted !== 1 || !usage || usageTotal(usage) <= 0 || !finalResponse.trim()) {
+  if (!threadId || turnCompleted !== 1 || !usage) {
     throw new ClimbError("E_SDK_EMPTY", `Codex candidate ${candidateId} ended without a complete, metered response`, 2, { usage });
+  }
+  if (typeof finalResponse !== "string" || !finalResponse.trim()) {
+    throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response must be nonblank JSON text`, 2, { usage });
   }
   let metadata;
   try { metadata = JSON.parse(finalResponse); }
@@ -1010,9 +1044,19 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response must be a JSON object`, 2, { usage });
   }
-  for (const key of CANDIDATE_SCHEMA.required) {
-    if (typeof metadata[key] !== "string" || !metadata[key].trim()) {
-      throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response omitted ${key}`, 2, { usage });
+  const required = CANDIDATE_SCHEMA.required;
+  const keys = Object.keys(metadata);
+  if (keys.length !== required.length || required.some((key) => !Object.prototype.hasOwnProperty.call(metadata, key))) {
+    throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response must contain exactly ${required.join(", ")}`, 2, { usage });
+  }
+  for (const key of required) {
+    const property = CANDIDATE_SCHEMA.properties[key];
+    const value = metadata[key];
+    if (typeof value !== property.type || !value.trim()) {
+      throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response requires a nonblank ${key}`, 2, { usage });
+    }
+    if ([...value].length > property.maxLength) {
+      throw new ClimbError("E_SDK_SCHEMA", `candidate ${candidateId} response ${key} exceeds ${property.maxLength} Unicode code points`, 2, { usage });
     }
   }
   return { metadata, usage, thread_id: threadId, trace_sha256: fileSha256(join(candidateDir, "turn.json")) };

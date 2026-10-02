@@ -165,3 +165,12 @@ Stop when the requested experiment has a verified terminal result and concrete
 handoff. Optional worked recipes and efficacy checks: `docs/task-playbook.md`.
 Optional subjective visual calibration detail: `docs/llm-judged-visuals.md`.
 </accept_and_report>
+
+<completion_contract>
+A generated candidate requires one completed metered turn, the exact declared
+three-field metadata schema, and an unexpired/uninterrupted completion. Invalid
+usage remains unknown; valid reported usage is counted even when a received
+completion is rejected. Finite SDK streams that finish after ignoring abort are
+drained for evidence, then refused before grading. This is acceptance protection,
+not force termination of arbitrary third-party code. See docs/sdk-contract.md.
+</completion_contract>
