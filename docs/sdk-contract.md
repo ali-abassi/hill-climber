@@ -17,7 +17,7 @@ Two real Luna xhigh candidates both reached 26/26 and passed the existing native
 
 These results establish completion-contract behavior in the defined scenarios, not broad model quality, throughput gains, strict aggregate cost limits or platform certification. The historical prompt benchmark holdout in this repository is disclosed benchmark data; this experiment uses different private cases outside the repository. One repeat is used for deterministic protocol assertions, not noisy timing optimization.
 
-The promoted source patch is preserved exactly at integration. Local receipts, ledger, frozen-file hashes, winner.patch and report.svg live in Dogfood's review bundle for hill-self-climb-2026-10-02. Dogfood task hill-climber/self-climb-sdk-contract records release checks at the delivered revision.
+The promoted source patch is preserved exactly at integration. Local receipts, ledger, frozen-file hashes, winner.patch and report.svg live in Dogfood's review bundle for hill-self-climb-2026-10-02. Dogfood task hill-climber-current/self-climb-sdk-contract records release checks at the delivered revision.
 
 ## Source-informed design
 

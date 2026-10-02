@@ -24,3 +24,5 @@ Measured by the real self-climb: two candidates, one round, 11/26 to 26/26 devel
 This measures the completion contract, with finite synthetic SDK responses. It does not establish general model quality, force termination, OS containment, throughput or production readiness. Existing untracked user documents are preserved; account/global configuration and real sessions remain unchanged.
 
 Separately added: HILL_CLIMBER_CODEX_PATH selects a compatible installed CLI for both login preflight and SDK turns. It replaces the need for the temporary SDK-module wrapper, keeps the default when unset and does not alter global configuration. This direct compatibility fix is covered by its own synthetic regression; the self-climb scores apply to the promoted completion guard patch.
+
+QA registration: the original hill-climber and hill-climber-workbench projects point to historical isolated worktrees. Their native receipt cannot verify this canonical release. Preserve those histories and use hill-climber-current, registered to /Users/aliabassi/hill-climber, for the current source-bound task and acceptance.
