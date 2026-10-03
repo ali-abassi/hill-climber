@@ -14,6 +14,7 @@ import {
   constants as fsConstants,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -32,6 +33,9 @@ import { minimatch } from "minimatch";
 
 const SCHEMA = "hill-climber.v1";
 const MAX_CAPTURE_BYTES = 2 * 1024 * 1024;
+// Worktrees share Git config and refs. Controller operations must not execute
+// candidate-configured helpers or reinterpret immutable objects via replaces.
+const SAFE_GIT_OPTIONS = ["--no-replace-objects", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
 // Candidate agents commonly run Python checks. Bytecode is execution debris,
 // not an authored repository change, so prevent it instead of weakening the
 // mutable-path boundary or silently deleting candidate output.
@@ -499,7 +503,7 @@ function validateConfig(config) {
 }
 
 function git(cwd, args, options = {}) {
-  return runSync(["git", ...args], { cwd, ...options });
+  return runSync(["git", ...SAFE_GIT_OPTIONS, ...args], { cwd, ...options });
 }
 
 function gitText(cwd, args) {
@@ -519,7 +523,7 @@ function assertCleanRepository(workspace) {
 }
 
 async function gitAsync(repo, args, allowFailure = false) {
-  const result = await runProcess(["git", "-C", repo, ...args]);
+  const result = await runProcess(["git", ...SAFE_GIT_OPTIONS, "-C", repo, ...args]);
   if (!allowFailure && result.code !== 0) {
     throw new ClimbError("E_PROCESS", `git ${args.join(" ")} failed: ${bounded(result.stderr || result.stdout, 1200).trim()}`);
   }
@@ -540,21 +544,52 @@ async function addWorktree(repo, path, commit) {
   await gitAsync(repo, ["worktree", "add", "--detach", path, commit]);
 }
 
-function changedPaths(worktree) {
-  const result = git(worktree, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  const entries = result.stdout.split("\0").filter(Boolean);
-  const paths = [];
-  for (const entry of entries) {
-    const body = entry.slice(3);
-    const renamed = body.includes(" -> ") ? body.split(" -> ").at(-1) : body;
-    paths.push(normalizePath(renamed));
-  }
-  return [...new Set(paths)].sort();
+function candidateGit(worktree) {
+  // Capture the controller-created worktree identity before the model runs.
+  // Never discover a replacement repository through candidate-authored .git.
+  const marker = join(worktree, ".git");
+  const markerBytes = readFileSync(marker);
+  const gitDir = realpathSync(gitText(worktree, ["rev-parse", "--absolute-git-dir"]));
+  const identity = statSync(gitDir);
+  const commonMarker = join(gitDir, "commondir");
+  const commonBytes = readFileSync(commonMarker);
+  return (args, options = {}) => {
+    try {
+      const current = lstatSync(gitDir);
+      if (!lstatSync(marker).isFile() || !readFileSync(marker).equals(markerBytes)
+          || !current.isDirectory() || current.dev !== identity.dev || current.ino !== identity.ino
+          || !readFileSync(commonMarker).equals(commonBytes)) {
+        throw new Error("worktree Git identity changed");
+      }
+    } catch {
+      throw new ClimbError("E_MUTABLE_BOUNDARY", "candidate replaced its controller-created Git directory");
+    }
+    return git(worktree, ["--git-dir", gitDir, "--work-tree", worktree, ...args], options);
+  };
 }
 
-function removeExecutionDebris(worktree) {
+function snapshotCandidateTree(runGit, parent) {
+  // Stage the entire final tree, including staged edits and candidate commits,
+  // then compare to the immutable parent rather than the candidate's HEAD.
+  runGit(["add", "-A"]);
+  const tree = runGit(["write-tree"]).stdout.trim();
+  const result = runGit(["diff", "--name-only", "--no-renames", "-z", parent, tree, "--"]);
+  return { tree, paths: [...new Set(result.stdout.split("\0").filter(Boolean))].sort() };
+}
+
+function removeExecutionDebris(worktree, runGit) {
+  const result = runGit(["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  const entries = result.stdout.split("\0");
+  const paths = [];
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (!entry) continue;
+    paths.push(entry.slice(3));
+    // Porcelain -z emits destination, then a separate NUL-terminated origin.
+    if (/[RC]/.test(entry.slice(0, 2))) i += 1;
+  }
   const removed = [];
-  for (const path of changedPaths(worktree)) {
+  for (const path of paths) {
     const parts = path.split("/");
     const pythonBytecode = parts.includes("__pycache__") && /\.(?:pyc|pyo)$/.test(path);
     const pytestCache = parts.includes(".pytest_cache");
@@ -582,17 +617,14 @@ function applyRef(repo, name, commit) {
   git(repo, ["update-ref", `refs/hill-climber/${name}`, commit]);
 }
 
-function candidateCommit(worktree, candidateId) {
-  git(worktree, ["add", "-A"]);
-  git(worktree, ["diff", "--cached", "--check"]);
-  const result = git(worktree, [
+function candidateCommit(runGit, parent, tree, candidateId) {
+  // Commit exactly the checked snapshot, with controller-owned ancestry.
+  // Whitespace is artifact content, not an execution failure or safety gate.
+  const result = runGit([
     "-c", "user.name=hill-climber", "-c", "user.email=hill-climber@localhost",
-    "commit", "--no-gpg-sign", "-m", `hill-climber candidate ${candidateId}`,
-  ], { allowFailure: true });
-  if (result.status !== 0) {
-    throw new ClimbError("E_NO_CHANGE", `candidate ${candidateId} produced no committable change`);
-  }
-  return gitText(worktree, ["rev-parse", "HEAD"]);
+    "commit-tree", tree, "-p", parent, "--no-gpg-sign", "-m", `hill-climber candidate ${candidateId}`,
+  ]);
+  return result.stdout.trim();
 }
 
 function manifestPath(experiment) { return join(experiment, "manifest.json"); }
@@ -643,7 +675,7 @@ function loadContext(experiment, request = {}) {
     ? Object.keys(persistedConfig.extra_env) : [];
   delete persistedConfig.extra_env;
   const envKeys = normalizeEnvKeys(persistedConfig.extra_env_keys ?? legacyEnvKeys);
-  return {
+  const context = {
     experiment: root,
     manifest,
     ledger,
@@ -653,6 +685,12 @@ function loadContext(experiment, request = {}) {
     repo: join(root, "repo"),
     abortController: new AbortController(),
   };
+  // Validate before any resume event or state write. A receipt is a projection
+  // of evidence, not an independent authority for terminal claims.
+  if (["inspect", "resume"].includes(request.action) && existsSync(join(root, "receipt.json"))) {
+    context.verifiedReceipt = readVerifiedReceipt(context);
+  }
+  return context;
 }
 
 function createContext(request) {
@@ -994,7 +1032,6 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   const events = [];
   let finalResponse = "";
   let usage = null;
-  let reportedUsage = null;
   let threadId = null;
   let turnCompleted = 0;
   let failure = null;
@@ -1005,12 +1042,16 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
       events.push(event);
       if (event.type === "thread.started") threadId = event.thread_id;
       if (event.type === "turn.completed") {
-        reportedUsage = event.usage ?? null;
-        usage = validUsage(event.usage) ? event.usage : null;
+        // A duplicate completion is invalid, but cannot erase or replace a
+        // valid meter already received for this turn. Count it only once.
+        if (usage === null && validUsage(event.usage)) usage = event.usage;
         turnCompleted += 1;
       }
-      if (event.type === "turn.failed") failure = event.error?.message ?? "turn failed";
-      if (event.type === "error") failure = event.message ?? "SDK stream error";
+      if (failure === null && (event.type === "turn.failed" || event.type === "error")) {
+        const message = event.type === "turn.failed" ? event.error?.message : event.message;
+        // Failure is an event fact, independent of the optional message.
+        failure = typeof message === "string" && message.trim() ? message : event.type;
+      }
       if (event.type === "item.completed" && event.item?.type === "agent_message") {
         finalResponse = event.item.text;
       }
@@ -1024,7 +1065,7 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   const trace = { schema: `${SCHEMA}.codex-turn`, candidate_id: candidateId, thread_id: threadId, usage, events };
   const candidateDir = join(context.experiment, "candidates", candidateId);
   mkdirSync(candidateDir, { recursive: true });
-  atomicWrite(join(candidateDir, "turn.json"), { ...trace, usage: reportedUsage });
+  atomicWrite(join(candidateDir, "turn.json"), trace);
   // Some SDK adapters finish their finite stream after ignoring abort. Drain
   // it so its events and meter remain inspectable, then reject it at the same
   // acceptance boundary as an adapter that cooperatively throws on abort.
@@ -1040,7 +1081,7 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
     streamError.details.usage = usage;
     throw streamError;
   }
-  if (failure) throw new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${failure}`, 2, { usage });
+  if (failure !== null) throw new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${failure}`, 2, { usage });
   if (!threadId || turnCompleted !== 1 || !usage) {
     throw new ClimbError("E_SDK_EMPTY", `Codex candidate ${candidateId} ended without a complete, metered response`, 2, { usage });
   }
@@ -1139,18 +1180,19 @@ async function generateCandidate(context, round, index, parent) {
   try {
     await addWorktree(context.repo, worktree, parent);
     await prepareWorktree(context, worktree);
+    const runGit = candidateGit(worktree);
     const prompt = candidatePrompt(context, candidateId, round, index, parent, strategy, priorEvidence(context));
     atomicWrite(join(candidateDir, "prompt.txt"), prompt);
     codex = await runCodexCandidate(context, candidateId, round, index, worktree, prompt);
-    const debris = removeExecutionDebris(worktree);
+    const debris = removeExecutionDebris(worktree, runGit);
     if (debris.length) append(context, "candidate_debris_removed", { candidate_id: candidateId, paths: debris });
-    const paths = changedPaths(worktree);
+    const { tree, paths } = snapshotCandidateTree(runGit, parent);
     if (!paths.length) throw new ClimbError("E_NO_CHANGE", `candidate ${candidateId} changed no files`);
     const denied = paths.filter((path) => !pathAllowed(path, context.config.mutable));
     if (denied.length) {
       throw new ClimbError("E_MUTABLE_BOUNDARY", `candidate ${candidateId} changed forbidden paths: ${denied.join(", ")}`);
     }
-    const commit = candidateCommit(worktree, candidateId);
+    const commit = candidateCommit(runGit, parent, tree, candidateId);
     applyRef(context.repo, `candidates/${candidateId}`, commit);
     const diff = git(context.repo, ["diff", "--binary", parent, commit]).stdout;
     atomicWrite(join(candidateDir, "change.patch"), diff);
@@ -2032,6 +2074,62 @@ function emitError(config, error, experiment = null) {
   return value.exitCode;
 }
 
+function readVerifiedReceipt(context) {
+  const receipt = readJson(join(context.experiment, "receipt.json"));
+  const equal = (left, right) => jsonBytes(left) === jsonBytes(right);
+  const requireEqual = (actual, expected, label) => {
+    if (!equal(actual, expected)) throw new ClimbError("E_EVIDENCE", `receipt ${label} differs from verified evidence`, 3);
+  };
+  const created = context.ledger.records.find((record) => record.type === "experiment_created");
+  requireEqual(context.manifest.experiment_id, created?.payload.experiment_id, "manifest identity");
+  requireEqual(context.manifest.source.workspace, context.manifest.config.workspace, "manifest workspace");
+  requireEqual(receipt?.schema, `${SCHEMA}.receipt`, "schema");
+  requireEqual(receipt.experiment_id, context.manifest.experiment_id, "experiment identity");
+  requireEqual(receipt.task, context.manifest.config.task, "objective");
+  requireEqual(receipt.source, context.manifest.source, "source");
+  for (const key of ["baseline", "incumbent", "counts", "usage", "applied", "status", "terminal_reason"]) {
+    requireEqual(receipt[key], context.state[key], key);
+  }
+  requireEqual(receipt.rounds_completed, context.state.round, "rounds completed");
+  requireEqual(receipt.candidates_requested, context.manifest.config.candidates * context.state.round, "candidates requested");
+  const promotionEvent = context.ledger.records.filter((record) =>
+    ["holdout_completed", "holdout_abandoned", "promotion_skipped"].includes(record.type)).at(-1);
+  if (!promotionEvent) throw new ClimbError("E_EVIDENCE", "receipt has no promotion decision in the ledger", 3);
+  requireEqual(receipt.promotion, promotionEvent.type === "promotion_skipped"
+    ? { verdict: "retained", holdout_used: false } : promotionEvent.payload, "promotion");
+
+  // Read only controller-selected paths. Hashes detect inconsistency with the
+  // verified checkpoint; they do not authenticate against a hostile writer.
+  const verifyFile = (claim, path, label, expectedHash = null) => {
+    try {
+      if (!claim || typeof claim.path !== "string" || realpathSync(claim.path) !== realpathSync(path) ||
+          claim.sha256 !== fileSha256(path) || (expectedHash !== null && claim.sha256 !== expectedHash)) {
+        throw new Error("path or bytes differ");
+      }
+    } catch (error) {
+      throw new ClimbError("E_EVIDENCE", `${label} differs from verified evidence: ${error.message}`, 3);
+    }
+  };
+  verifyFile(receipt.evidence?.manifest, manifestPath(context.experiment), "receipt manifest");
+  verifyFile(receipt.evidence?.ledger, ledgerPath(context.experiment), "receipt ledger");
+  const patchEvent = holdoutRecord(context, "winner_patch_prepared")?.payload;
+  if (patchEvent) {
+    requireEqual(patchEvent.patch, "winner.patch", "patch ledger path");
+    verifyFile(receipt.patch, join(context.experiment, "winner.patch"), "winner patch", patchEvent.patch_sha256);
+  } else {
+    requireEqual(receipt.patch, null, "patch without ledger record");
+  }
+  if (context.state.applied) {
+    const applied = holdoutRecord(context, "winner_applied")?.payload;
+    requireEqual(applied?.patch, patchEvent?.patch, "applied patch");
+    requireEqual(applied?.patch_sha256, receipt.patch?.sha256, "applied patch hash");
+    requireEqual(applied?.workspace, context.manifest.source.workspace, "applied workspace");
+  }
+  requireEqual(receipt.report?.format, "image/svg+xml", "report format");
+  verifyFile(receipt.report, join(context.experiment, "report.svg"), "receipt report");
+  return receipt;
+}
+
 function inspect(context, candidateId = null) {
   if (candidateId) {
     const directory = ensureInside(join(context.experiment, "candidates"),
@@ -2041,7 +2139,7 @@ function inspect(context, candidateId = null) {
     return { schema: `${SCHEMA}.inspection`, experiment: context.experiment, candidate_id: candidateId,
       evidence: Object.fromEntries(names.map((name) => [name, readJson(join(directory, name))])) };
   }
-  return summaryPayload(context, existsSync(join(context.experiment, "receipt.json")) ? readJson(join(context.experiment, "receipt.json")) : null);
+  return summaryPayload(context, context.verifiedReceipt ?? null);
 }
 
 async function main() {
@@ -2097,7 +2195,7 @@ async function main() {
   try {
     if (request.action === "resume") {
       if (["promoted", "retained"].includes(context.state.status) && existsSync(join(context.experiment, "receipt.json"))) {
-        emit(context.config, summaryPayload(context, readJson(join(context.experiment, "receipt.json"))));
+        emit(context.config, summaryPayload(context, context.verifiedReceipt));
         return context.state.status === "promoted" ? 0 : 1;
       }
       append(context, "run_resumed", { previous_status: context.state.status });
