@@ -132,6 +132,31 @@ or narrow editable surface before spending more. Do not tune against a disclosed
 holdout: a new experiment after inspection needs fresh private cases.
 </pilot_then_scale>
 
+<experimental_skepticism>
+A perfect score means the chosen panel is saturated, not that the artifact is
+fully optimized or that your capabilities are established. Before calling a
+result strong, try to falsify the scoring contract: reproduce failures beyond
+the panel, use known-good and deliberately broken controls, and seek an
+independent review when it earns the handoff cost. State uncovered dimensions.
+
+When the user asks to push further, broaden the credible objective and allow
+more competing mechanisms and rounds within explicit limits. Do not force
+extra rounds merely to draw a longer chart, inflate the score ceiling or
+quietly reuse a disclosed holdout. A target stop, plateau and budget exhaustion
+are different outcomes; report the real one and candidate/round counts.
+
+Freeze evaluators before search. Preserve failed, retained and crashed evidence,
+inspect the full winning diff, and distinguish independent case authorship from
+OS-enforced holdout secrecy. Candidates must not read private inputs; keeping
+them outside the repository does not create a security sandbox. Passing native
+checks, a private panel and CI establish their measured boundaries separately.
+Compare the frozen evaluator's native checks with the project's complete release
+command. A Python-only candidate gate does not cover Node workbench tests, and
+candidate success cannot replace the required full release check. Keep separately
+authored direct fixes and their regressions distinct from measured experiment
+patches; do not assign an unseen-panel score to changes made after that comparison.
+</experimental_skepticism>
+
 <inspect_and_recover>
 Progress is append-only stderr; `--json` gives one machine response on stdout.
 Use `hill-climber status EXPERIMENT --json` and
@@ -146,6 +171,11 @@ Tampered artifacts fail verification. Stopped/exhausted runs do not launch
 missing model turns. SDK-reported generation usage is counted even for ungraded
 or malformed turns; missing usage is not invented. Legacy runs retain their
 original accounting mode.
+Stop is a durable request consumed by the active writer, not permission to signal
+the PID recorded in a lock. On resume, an existing request prevents new model
+turns while already generated work and its one-time promotion can finish; a new
+request can interrupt that resumed writer. Exact recorded winner application can
+recover after a crash; unrelated edits and partial application remain drift.
 </inspect_and_recover>
 
 <accept_and_report>
@@ -173,6 +203,11 @@ usage remains unknown; valid reported usage is counted even when a received
 completion is rejected. Finite SDK streams that finish after ignoring abort are
 drained for evidence, then refused before grading. This is acceptance protection,
 not force termination of arbitrary third-party code. See docs/sdk-contract.md.
+Monotonic elapsed-time checks also refuse finite streams that starve timeout
+callbacks. Retained SDK trace bytes, including their JSON envelope, are bounded
+to 2 MiB. Above-limit streams are refused, with bounded evidence and any valid
+meter already received; provider allocations before event delivery are outside
+this retention guard.
 </completion_contract>
 
 <codex_binary_override>

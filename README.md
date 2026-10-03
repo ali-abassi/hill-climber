@@ -99,6 +99,13 @@ model benchmarks and platform matrices in the full guide were not rerun for
 this UI refresh. Instruction delivery tests do not establish model quality
 across every task family.
 
+The [skeptical self-climb](docs/adversarial-limits.md) records a harder follow-up:
+24 candidates across six actual rounds improved 49 execution-contract cases
+from 13 passing to 47. Separate unseen comparisons improved from 18/50 to 36/50
+and from 8/25 to 21/25. Subsequent direct fixes pass all 49 public cases and add
+crash/stop/selection regressions; those later edits have no fresh unseen score.
+Remaining limits and complete release checks are explicit.
+
 ## When another tool fits better
 
 Use a direct edit for a known bug. Use Hill Climber for repeated experiments with a deterministic, protected score.

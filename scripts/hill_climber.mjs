@@ -422,25 +422,17 @@ function anySignal(signals) {
   return controller.signal;
 }
 
-function average(values) {
-  if (!values.length) return NaN;
-  // Every finite binary64 is an integer multiple of 2^-1074. Accumulate in
-  // those units so neither overflow nor cancellation loses a repeat's score,
-  // then round the mean once (nearest, ties to even) back to binary64.
-  const bits = new DataView(new ArrayBuffer(8));
-  let total = 0n;
-  for (const value of values) {
-    bits.setFloat64(0, value);
-    const raw = bits.getBigUint64(0);
-    const exponent = Number((raw >> 52n) & 0x7ffn);
-    const fraction = raw & ((1n << 52n) - 1n);
-    const significand = exponent ? fraction | (1n << 52n) : fraction;
-    const units = significand << BigInt(exponent ? exponent - 1 : 0);
-    total += raw >> 63n ? -units : units;
-  }
-  const negative = total < 0n;
-  const magnitude = negative ? -total : total;
-  const count = BigInt(values.length);
+function binary64Units(value, bits) {
+  bits.setFloat64(0, value);
+  const raw = bits.getBigUint64(0);
+  const exponent = Number((raw >> 52n) & 0x7ffn);
+  const fraction = raw & ((1n << 52n) - 1n);
+  const significand = exponent ? fraction | (1n << 52n) : fraction;
+  const units = significand << BigInt(exponent ? exponent - 1 : 0);
+  return raw >> 63n ? -units : units;
+}
+
+function roundedBinary64Mean(magnitude, count) {
   const whole = magnitude / count;
   const shift = Math.max(0, whole.toString(2).length - 53);
   const divisor = count << BigInt(shift);
@@ -448,7 +440,20 @@ function average(values) {
   const remainder = magnitude % divisor;
   if (remainder * 2n > divisor ||
       (remainder * 2n === divisor && (significand & 1n))) significand += 1n;
-  const mean = Number(significand) * 2 ** (shift - 1074);
+  return Number(significand) * 2 ** (shift - 1074);
+}
+
+function average(values) {
+  if (!values.length) return NaN;
+  // Every finite binary64 is an integer multiple of 2^-1074. Accumulate in
+  // those units so neither overflow nor cancellation loses a repeat's score,
+  // then round the mean once (nearest, ties to even) back to binary64.
+  const bits = new DataView(new ArrayBuffer(8));
+  let total = 0n;
+  for (const value of values) total += binary64Units(value, bits);
+  const negative = total < 0n;
+  const magnitude = negative ? -total : total;
+  const mean = roundedBinary64Mean(magnitude, BigInt(values.length));
   return negative ? -mean : mean;
 }
 
@@ -711,6 +716,7 @@ function loadContext(experiment, request = {}) {
     repo: join(root, "repo"),
     abortController: new AbortController(),
   };
+  assertPromotionSelection(context);
   // Validate before any resume event or state write. A receipt is a projection
   // of evidence, not an independent authority for terminal claims.
   if (["inspect", "resume"].includes(request.action) && existsSync(join(root, "receipt.json"))) {
@@ -844,13 +850,18 @@ async function assertRuntime(context) {
 function assertAppliedSource(context) {
   const source = context.manifest.source;
   const applied = context.ledger.records.filter((record) => record.type === "winner_applied").at(-1)?.payload;
-  const patchPath = join(context.experiment, "winner.patch");
-  const patchHash = existsSync(patchPath) ? fileSha256(patchPath) : null;
-  const expectedPatch = git(context.repo, ["diff", "--binary", source.head, context.state.incumbent.commit]).stdout;
+  const prepared = holdoutRecord(context, "winner_patch_prepared")?.payload;
+  if (!prepared) throw new ClimbError("E_EVIDENCE", "applied winner has no prepared patch record", 3);
+  const patch = verifiedPreparedPatch(context, prepared);
   if (!applied || applied.workspace !== source.workspace ||
-      applied.patch_sha256 !== sha256(expectedPatch) || patchHash !== applied.patch_sha256) {
+      applied.patch_sha256 !== patch.sha256) {
     throw new ClimbError("E_EVIDENCE", "applied winner does not match its recorded patch", 3);
   }
+  assertWinnerSourceTree(context, patch.path);
+}
+
+function assertWinnerSourceTree(context, patchPath) {
+  const source = context.manifest.source;
   // Snapshot the working tree through an isolated index, including newly added
   // files. Never stage into or modify the user's actual index during recovery.
   const index = join(context.experiment, `.verify-source-${randomUUID()}.index`);
@@ -870,11 +881,16 @@ function assertAppliedSource(context) {
   }
 }
 
-function assertSourceRepository(context) {
+function assertSourceHead(context) {
   const source = context.manifest.source;
   if (gitText(source.workspace, ["rev-parse", "HEAD"]) !== source.head) {
     throw new ClimbError("E_DRIFT", "source HEAD changed after the experiment was created", 3);
   }
+}
+
+function assertSourceRepository(context) {
+  const source = context.manifest.source;
+  assertSourceHead(context);
   if (context.state.applied) assertAppliedSource(context);
   else if (gitText(source.workspace, ["status", "--porcelain=v1", "--untracked-files=normal"])) {
     throw new ClimbError("E_DRIFT", "source repository changed after the experiment was created", 3);
@@ -1054,9 +1070,13 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
     model: context.config.model,
     modelReasoningEffort: context.config.reasoning,
   });
-  const deadline = AbortSignal.timeout(Math.max(1, context.config.candidate_timeout_seconds) * 1000);
-  const captureController = new AbortController();
-  const signal = anySignal([context.abortController.signal, deadline, captureController.signal]);
+  const timeoutSeconds = Math.max(1, context.config.candidate_timeout_seconds);
+  const started = process.hrtime.bigint();
+  const timeoutNanoseconds = BigInt(Math.ceil(timeoutSeconds * 1e9));
+  const expired = () => process.hrtime.bigint() - started >= timeoutNanoseconds;
+  const deadline = AbortSignal.timeout(timeoutSeconds * 1000);
+  const refusalController = new AbortController();
+  const signal = anySignal([context.abortController.signal, deadline, refusalController.signal]);
   // Retain serialized snapshots, not a growing array of provider objects.
   // Include the JSON envelope and separators in the same subprocess-sized cap.
   const events = [];
@@ -1082,6 +1102,9 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
           .filter((key) => Object.prototype.hasOwnProperty.call(event.usage, key))
           .map((key) => [key, event.usage[key]]));
       }
+      // Finite microtask-heavy iterators can starve the timer callback. Check
+      // actual monotonic elapsed time while retaining any received meter.
+      if (!captureError && expired()) refusalController.abort();
       if (captureError) continue;
       const encoded = JSON.stringify(stable(event));
       const nextThreadId = event.type === "thread.started" ? event.thread_id : threadId;
@@ -1089,7 +1112,7 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
       if (eventBytes + addedBytes + Buffer.byteLength(traceHeader(nextThreadId)) > MAX_CAPTURE_BYTES) {
         captureError = new ClimbError("E_SDK_LIMIT", `Codex candidate ${candidateId} trace exceeded ${MAX_CAPTURE_BYTES} bytes`);
         finalResponse = "";
-        captureController.abort(captureError);
+        refusalController.abort(captureError);
         continue;
       }
       events.push(encoded);
@@ -1128,7 +1151,7 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
   // Some SDK adapters finish their finite stream after ignoring abort. Drain
   // it so its events and meter remain inspectable, then reject it at the same
   // acceptance boundary as an adapter that cooperatively throws on abort.
-  if (context.abortController.signal.aborted || (!captureError && signal.aborted)) {
+  if (context.abortController.signal.aborted || (!captureError && (signal.aborted || expired()))) {
     const error = context.abortController.signal.aborted
       ? new InterruptedError(String(context.abortController.signal.reason ?? "interrupted"))
       : new ClimbError("E_CANDIDATE_TIMEOUT",
@@ -1547,6 +1570,94 @@ function holdoutRecord(context, type) {
   return context.ledger.records.filter((record) => record.type === type).at(-1) ?? null;
 }
 
+function requireIncumbentProjection(actual, expected, label) {
+  const keys = ["id", "commit", "score", "low", "high", "scores", "gates", "complexity"];
+  if (!actual || !expected || keys.some((key) => jsonBytes(actual[key]) !== jsonBytes(expected[key]))) {
+    throw new ClimbError("E_EVIDENCE", `${label} differs from the ledger evaluation/selection`, 3);
+  }
+}
+
+function verifiedBaseline(context) {
+  const baseline = holdoutRecord(context, "baseline_evaluated")?.payload;
+  requireIncumbentProjection(context.state.baseline, baseline, "baseline");
+  if (baseline.commit !== context.manifest.source.head) {
+    throw new ClimbError("E_EVIDENCE", "baseline differs from the ledger evaluation", 3);
+  }
+  return baseline;
+}
+
+function developmentSelection(context, beforeSeq = Infinity) {
+  const baseline = verifiedBaseline(context);
+  const selected = context.ledger.records.filter((record) =>
+    record.type === "round_selected" && record.seq < beforeSeq).at(-1)?.payload;
+  if (!selected || selected.selected_commit === baseline.commit) return baseline;
+  const evaluated = context.ledger.records.filter((record) =>
+    record.type === "candidate_evaluated" && record.seq < beforeSeq &&
+    record.payload.commit === selected.selected_commit).at(-1)?.payload;
+  if (!evaluated) throw new ClimbError("E_EVIDENCE", "selection has no matching development evaluation", 3);
+  return { id: evaluated.candidate_id, commit: evaluated.commit,
+    score: evaluated.evaluation.score, low: evaluated.evaluation.low,
+    high: evaluated.evaluation.high, scores: evaluated.evaluation.scores,
+    gates: evaluated.evaluation.gates, complexity: evaluated.complexity };
+}
+
+function holdoutSelection(context, decision) {
+  const started = holdoutRecord(context, "holdout_started");
+  if (!started || started.seq >= decision.seq) {
+    throw new ClimbError("E_EVIDENCE", "promotion has no matching holdout selection", 3);
+  }
+  if (started.payload.baseline !== verifiedBaseline(context).commit) {
+    throw new ClimbError("E_EVIDENCE", "holdout baseline differs from its evaluation", 3);
+  }
+  const selected = developmentSelection(context, started.seq);
+  if (selected.commit !== started.payload.candidate) {
+    throw new ClimbError("E_EVIDENCE", "holdout differs from the development selection", 3);
+  }
+  return selected;
+}
+
+function assertPromotionSelection(context) {
+  const decision = context.ledger.records.filter((record) =>
+    ["holdout_completed", "holdout_abandoned", "promotion_skipped"].includes(record.type)).at(-1);
+  if (!decision) return;
+  let expected = verifiedBaseline(context);
+  if (decision.type === "holdout_completed") {
+    const selected = holdoutSelection(context, decision);
+    if (!["promoted", "reverted"].includes(decision.payload.verdict)) {
+      throw new ClimbError("E_EVIDENCE", "unsupported promotion verdict", 3);
+    }
+    if (decision.payload.verdict === "promoted") expected = selected;
+  }
+  requireIncumbentProjection(context.state.incumbent, expected, "incumbent");
+}
+
+function verifiedPreparedPatch(context, prepared) {
+  const source = context.manifest.source;
+  const patchPath = join(context.experiment, "winner.patch");
+  const expected = git(context.repo, ["diff", "--binary", source.head, context.state.incumbent.commit]).stdout;
+  const patchHash = existsSync(patchPath) ? fileSha256(patchPath) : null;
+  if (prepared.patch !== "winner.patch" || patchHash !== prepared.patch_sha256 ||
+      prepared.patch_sha256 !== sha256(expected)) {
+    throw new ClimbError("E_EVIDENCE", "prepared winner patch differs from its recorded selection", 3);
+  }
+  return { path: patchPath, sha256: patchHash };
+}
+
+function recoverAppliedWinner(context) {
+  if (!context.config.apply || context.state.applied ||
+      holdoutRecord(context, "holdout_completed")?.payload.verdict !== "promoted") return;
+  const prepared = holdoutRecord(context, "winner_patch_prepared")?.payload;
+  if (!prepared) return;
+  assertSourceHead(context);
+  const patch = verifiedPreparedPatch(context, prepared);
+  // Accept only the complete, already applied winner tree. Partial application
+  // or unrelated edits remain source drift; the user's index is never changed.
+  assertWinnerSourceTree(context, patch.path);
+  context.state.applied = true;
+  append(context, "winner_applied", { workspace: context.manifest.source.workspace, patch: "winner.patch",
+    patch_sha256: prepared.patch_sha256, recovered: true });
+}
+
 async function baseline(context) {
   if (context.state.baseline) return;
   progress(context.config, "BASELINE", `EVALUATING ${context.manifest.source.head.slice(0, 12)}`);
@@ -1620,6 +1731,7 @@ async function runRound(context, round, recovery = null) {
 async function promotion(context) {
   const baselineValue = context.state.baseline;
   const incumbent = context.state.incumbent;
+  requireIncumbentProjection(incumbent, developmentSelection(context), "development incumbent");
   if (incumbent.id === "baseline") {
     context.state.status = "retained";
     context.state.terminal_reason = context.state.terminal_reason ?? "no_development_winner";
@@ -1661,6 +1773,7 @@ async function promotion(context) {
 }
 
 function applyWinner(context) {
+  assertPromotionSelection(context);
   if (context.state.status !== "promoted") return null;
   const existingPatch = join(context.experiment, "winner.patch");
   if (context.state.applied) {
@@ -2034,6 +2147,9 @@ async function execute(context) {
   if (completedHoldout) {
     // Finishing a durable promotion needs source integrity, not another model
     // login, evaluator secret, or invocation of the one-time holdout.
+    if (gitText(context.manifest.source.workspace, ["status", "--porcelain=v1", "--untracked-files=normal"])) {
+      recoverAppliedWinner(context);
+    }
     assertSourceRepository(context);
     const promotionResult = completedHoldout.payload;
     context.state.status = promotionResult.verdict === "promoted" ? "promoted" : "retained";
@@ -2148,7 +2264,7 @@ function readVerifiedReceipt(context) {
   };
   const created = context.ledger.records.find((record) => record.type === "experiment_created");
   requireEqual(context.manifest.experiment_id, created?.payload.experiment_id, "manifest identity");
-  requireEqual(context.manifest.source.workspace, context.manifest.config.workspace, "manifest workspace");
+  requireEqual(context.manifest.source.workspace, context.manifest.config.workspace, "manifest identity");
   requireEqual(receipt?.schema, `${SCHEMA}.receipt`, "schema");
   requireEqual(receipt.experiment_id, context.manifest.experiment_id, "experiment identity");
   requireEqual(receipt.task, context.manifest.config.task, "objective");
@@ -2168,10 +2284,11 @@ function readVerifiedReceipt(context) {
   // verified checkpoint; they do not authenticate against a hostile writer.
   const verifyFile = (claim, path, label, expectedHash = null) => {
     try {
-      if (!claim || typeof claim.path !== "string" || realpathSync(claim.path) !== realpathSync(path) ||
-          claim.sha256 !== fileSha256(path) || (expectedHash !== null && claim.sha256 !== expectedHash)) {
-        throw new Error("path or bytes differ");
-      }
+      requireEqual(typeof claim?.path, "string", `${label} claim path type`);
+      requireEqual(realpathSync(claim.path), realpathSync(path), `${label} path`);
+      const actualHash = fileSha256(path);
+      requireEqual(claim.sha256, actualHash, `${label} bytes`);
+      if (expectedHash !== null) requireEqual(actualHash, expectedHash, `${label} checkpoint hash`);
     } catch (error) {
       throw new ClimbError("E_EVIDENCE", `${label} differs from verified evidence: ${error.message}`, 3);
     }
@@ -2223,13 +2340,9 @@ async function main() {
     let context;
     try { context = loadContext(request.experiment, request); }
     catch (error) { return emitError(request, error, request.experiment); }
-    atomicWrite(join(context.experiment, "stop.request"), { requested_at: now(), requested_by: process.pid });
-    if (existsSync(join(context.experiment, "run.lock"))) {
-      try {
-        const owner = readJson(join(context.experiment, "run.lock"));
-        process.kill(owner.pid, "SIGINT");
-      } catch {}
-    }
+    atomicWrite(join(context.experiment, "stop.request"), {
+      request_id: randomUUID(), requested_at: now(), requested_by: process.pid,
+    });
     emit(request, summaryPayload(context));
     return 0;
   }
@@ -2256,6 +2369,24 @@ async function main() {
     return emitError(request, error, context.experiment);
   }
   const interrupt = () => context.abortController.abort("user interrupt");
+  const stopPath = join(context.experiment, "stop.request");
+  // A prior request still stops new generation, but must not abort recovered
+  // evaluation or spend the one-time holdout while finishing this writer.
+  const previousStop = existsSync(stopPath) ? fileSha256(stopPath) : null;
+  // A durable request is consumed by the writer itself. A lock's PID can be
+  // recycled and is not authority to signal another process.
+  const stopWatcher = setInterval(() => {
+    try {
+      if (existsSync(stopPath) && fileSha256(stopPath) !== previousStop) {
+        context.abortController.abort("stop requested");
+      }
+    } catch (error) {
+      // Atomic removal is harmless; an unreadable control request cancels work
+      // through the normal drain path instead of escaping the timer callback.
+      if (error.code !== "ENOENT") context.abortController.abort("cannot read stop request");
+    }
+  }, 100);
+  stopWatcher.unref();
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
   try {
@@ -2281,6 +2412,7 @@ async function main() {
     append(context, "run_failed", { code: error.code ?? "E_INTERNAL", message: bounded(error.message ?? String(error)) });
     return emitError(context.config, error, context.experiment);
   } finally {
+    clearInterval(stopWatcher);
     process.removeListener("SIGINT", interrupt);
     process.removeListener("SIGTERM", interrupt);
     lock.release();
