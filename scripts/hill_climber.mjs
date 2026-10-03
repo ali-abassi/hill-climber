@@ -423,7 +423,33 @@ function anySignal(signals) {
 }
 
 function average(values) {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (!values.length) return NaN;
+  // Every finite binary64 is an integer multiple of 2^-1074. Accumulate in
+  // those units so neither overflow nor cancellation loses a repeat's score,
+  // then round the mean once (nearest, ties to even) back to binary64.
+  const bits = new DataView(new ArrayBuffer(8));
+  let total = 0n;
+  for (const value of values) {
+    bits.setFloat64(0, value);
+    const raw = bits.getBigUint64(0);
+    const exponent = Number((raw >> 52n) & 0x7ffn);
+    const fraction = raw & ((1n << 52n) - 1n);
+    const significand = exponent ? fraction | (1n << 52n) : fraction;
+    const units = significand << BigInt(exponent ? exponent - 1 : 0);
+    total += raw >> 63n ? -units : units;
+  }
+  const negative = total < 0n;
+  const magnitude = negative ? -total : total;
+  const count = BigInt(values.length);
+  const whole = magnitude / count;
+  const shift = Math.max(0, whole.toString(2).length - 53);
+  const divisor = count << BigInt(shift);
+  let significand = magnitude / divisor;
+  const remainder = magnitude % divisor;
+  if (remainder * 2n > divisor ||
+      (remainder * 2n === divisor && (significand & 1n))) significand += 1n;
+  const mean = Number(significand) * 2 ** (shift - 1074);
+  return negative ? -mean : mean;
 }
 
 function evaluatorResult(raw, label) {
@@ -910,7 +936,8 @@ async function evaluateCommit(context, commit, phase, id, argv, repeats) {
   } finally {
     await safeRemoveWorktree(context.repo, worktree);
   }
-  const gates = {};
+  // Gate names are evaluator data, never inherited properties or setters.
+  const gates = Object.create(null);
   for (const result of results) {
     for (const [name, passed] of Object.entries(result.gates)) gates[name] = (gates[name] ?? true) && passed;
   }
@@ -1028,23 +1055,49 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
     modelReasoningEffort: context.config.reasoning,
   });
   const deadline = AbortSignal.timeout(Math.max(1, context.config.candidate_timeout_seconds) * 1000);
-  const signal = anySignal([context.abortController.signal, deadline]);
+  const captureController = new AbortController();
+  const signal = anySignal([context.abortController.signal, deadline, captureController.signal]);
+  // Retain serialized snapshots, not a growing array of provider objects.
+  // Include the JSON envelope and separators in the same subprocess-sized cap.
   const events = [];
+  let eventBytes = 0;
+  let captureError = null;
   let finalResponse = "";
   let usage = null;
   let threadId = null;
   let turnCompleted = 0;
   let failure = null;
   let streamError = null;
+  const traceHeader = (id = threadId) => jsonBytes({
+    schema: `${SCHEMA}.codex-turn`, candidate_id: candidateId, thread_id: id, usage, events: [],
+    ...(captureError ? { capture_error: { code: captureError.code, limit_bytes: MAX_CAPTURE_BYTES } } : {}),
+  });
   try {
     const streamed = await thread.runStreamed(prompt, { outputSchema: CANDIDATE_SCHEMA, signal });
     for await (const event of streamed.events) {
-      events.push(event);
-      if (event.type === "thread.started") threadId = event.thread_id;
+      // Drain finite streams after refusal, keeping only the first valid meter.
+      // Snapshot known counters so provider extras cannot bypass the trace cap.
+      if (event.type === "turn.completed" && usage === null && validUsage(event.usage)) {
+        usage = Object.fromEntries(Object.keys(usageZero())
+          .filter((key) => Object.prototype.hasOwnProperty.call(event.usage, key))
+          .map((key) => [key, event.usage[key]]));
+      }
+      if (captureError) continue;
+      const encoded = JSON.stringify(stable(event));
+      const nextThreadId = event.type === "thread.started" ? event.thread_id : threadId;
+      const addedBytes = Buffer.byteLength(encoded) + (events.length ? 1 : 0);
+      if (eventBytes + addedBytes + Buffer.byteLength(traceHeader(nextThreadId)) > MAX_CAPTURE_BYTES) {
+        captureError = new ClimbError("E_SDK_LIMIT", `Codex candidate ${candidateId} trace exceeded ${MAX_CAPTURE_BYTES} bytes`);
+        finalResponse = "";
+        captureController.abort(captureError);
+        continue;
+      }
+      events.push(encoded);
+      eventBytes += addedBytes;
+      threadId = nextThreadId;
       if (event.type === "turn.completed") {
         // A duplicate completion is invalid, but cannot erase or replace a
         // valid meter already received for this turn. Count it only once.
-        if (usage === null && validUsage(event.usage)) usage = event.usage;
         turnCompleted += 1;
       }
       if (failure === null && (event.type === "turn.failed" || event.type === "error")) {
@@ -1062,20 +1115,30 @@ async function runCodexCandidate(context, candidateId, round, index, worktree, p
         : new ClimbError("E_CANDIDATE_TIMEOUT", `candidate ${candidateId} exceeded ${context.config.candidate_timeout_seconds}s`);
     } else streamError = new ClimbError("E_SDK", `Codex candidate ${candidateId} failed: ${error.message}`);
   }
-  const trace = { schema: `${SCHEMA}.codex-turn`, candidate_id: candidateId, thread_id: threadId, usage, events };
+  const header = traceHeader();
+  // A late meter and the refusal marker can enlarge the envelope. On failed
+  // captures only, retire trailing snapshots until the full trace fits.
+  while (eventBytes + Buffer.byteLength(header) > MAX_CAPTURE_BYTES && events.length) {
+    eventBytes -= Buffer.byteLength(events.pop()) + (events.length ? 1 : 0);
+  }
+  const trace = header.replace('"events":[]', () => `"events":[${events.join(",")}]`);
   const candidateDir = join(context.experiment, "candidates", candidateId);
   mkdirSync(candidateDir, { recursive: true });
   atomicWrite(join(candidateDir, "turn.json"), trace);
   // Some SDK adapters finish their finite stream after ignoring abort. Drain
   // it so its events and meter remain inspectable, then reject it at the same
   // acceptance boundary as an adapter that cooperatively throws on abort.
-  if (signal.aborted) {
+  if (context.abortController.signal.aborted || (!captureError && signal.aborted)) {
     const error = context.abortController.signal.aborted
       ? new InterruptedError(String(context.abortController.signal.reason ?? "interrupted"))
       : new ClimbError("E_CANDIDATE_TIMEOUT",
         `candidate ${candidateId} exceeded ${context.config.candidate_timeout_seconds}s`);
     error.details.usage = usage;
     throw error;
+  }
+  if (captureError) {
+    captureError.details.usage = usage;
+    throw captureError;
   }
   if (streamError) {
     streamError.details.usage = usage;
@@ -1692,10 +1755,13 @@ function renderReport(context, receipt) {
   const chart = { left: 100, right: 1132, top: 228, bottom: 492 };
   const scores = [receipt.baseline.score, ...allCandidates.map((candidate) => candidate.score)]
     .map(Number).filter(Number.isFinite);
-  let scoreMin = Math.min(...scores);
-  let scoreMax = Math.max(...scores);
+  // Chart geometry uses dimensionless scores. Padding and subtraction in the
+  // original units can overflow at either end of the finite binary64 range.
+  const scoreScale = Math.max(1, ...scores.map((score) => Math.abs(score)));
+  let scoreMin = Math.min(...scores) / scoreScale;
+  let scoreMax = Math.max(...scores) / scoreScale;
   if (scoreMin === scoreMax) {
-    const padding = Math.max(1, Math.abs(scoreMin) * 0.1);
+    const padding = Math.max(1 / scoreScale, Math.abs(scoreMin) * 0.1);
     scoreMin -= padding;
     scoreMax += padding;
   } else {
@@ -1704,7 +1770,7 @@ function renderReport(context, receipt) {
     scoreMax += padding;
   }
   const xFor = (index) => chart.left + ((chart.right - chart.left) * index / Math.max(1, allCandidates.length));
-  const yFor = (score) => chart.bottom - ((Number(score) - scoreMin) / (scoreMax - scoreMin)) * (chart.bottom - chart.top);
+  const yFor = (score) => chart.bottom - ((Number(score) / scoreScale - scoreMin) / (scoreMax - scoreMin)) * (chart.bottom - chart.top);
 
   const roundBands = roundIds.map((round, roundIndex) => {
     const indexes = allCandidates.map((candidate, index) => Number(candidate.round) === round ? index : -1)
@@ -1722,7 +1788,7 @@ function renderReport(context, receipt) {
   const grid = Array.from({ length: 5 }, (_, index) => {
     const ratio = index / 4;
     const y = chart.bottom - ratio * (chart.bottom - chart.top);
-    const value = scoreMin + ratio * (scoreMax - scoreMin);
+    const value = (scoreMin + ratio * (scoreMax - scoreMin)) * scoreScale;
     return `<line x1="${chart.left}" y1="${y}" x2="${chart.right}" y2="${y}" class="grid"/>
     <text x="${chart.left - 14}" y="${y + 4}" class="axis" text-anchor="end">${xml(scoreText(value))}</text>`;
   }).join("\n");
